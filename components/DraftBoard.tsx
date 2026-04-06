@@ -1239,10 +1239,10 @@ export default function DraftBoard() {
         });
       } else {
         // null can be a transient KV hiccup OR a genuinely reset draft.
-        // Protect against single hiccups, but after 3 consecutive nulls
-        // (~9s) accept that the draft is gone and return to the lobby.
+        // Protect against single hiccups, but after 2 consecutive nulls
+        // (~6s) accept that the draft is gone and return to the lobby.
         nullPollCount.current += 1;
-        if (nullPollCount.current >= 3) {
+        if (nullPollCount.current >= 2) {
           nullPollCount.current = 0;
           setDraftState(null);
           setScreen('setup');
@@ -1425,7 +1425,15 @@ export default function DraftBoard() {
       const next = await apiPick(player, pickAs);
       setDraftState(prev => (prev && next.updatedAt <= prev.updatedAt) ? prev : next);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Pick failed');
+      const msg = e instanceof Error ? e.message : 'Pick failed';
+      // If the server says there's no draft, it was reset from another
+      // session — go back to the lobby immediately rather than showing an error.
+      if (msg === 'No active draft' || msg === 'Draft is already complete') {
+        setDraftState(null);
+        setScreen('setup');
+      } else {
+        setError(msg);
+      }
     }
   }, [draftState]);
 
@@ -1585,7 +1593,7 @@ export default function DraftBoard() {
                 </div>
               )}
               {localMode && (
-                <span className="text-[10px] text-amber-500 bg-amber-950/40 px-2 py-1 rounded-md font-medium hidden sm:block">Local only</span>
+                <span className="text-[10px] text-red-400 bg-red-950/40 border border-red-800 px-2 py-1 rounded-md font-semibold">⚠ No KV</span>
               )}
               {draftState.picks.length > 0 && (
                 <button onClick={requestUndo} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg font-medium transition-colors">
@@ -1615,6 +1623,13 @@ export default function DraftBoard() {
                 {dark ? <SunIcon /> : <MoonIcon />}
               </button>
             </nav>
+
+            {/* Local-mode warning — picks won't persist without KV */}
+            {localMode && (
+              <div className="shrink-0 flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-xs font-semibold">
+                ⚠ KV storage not connected — picks will not sync between users. Check Vercel → Storage → KV is linked to this project.
+              </div>
+            )}
 
             {/* Error toast */}
             {error && (
