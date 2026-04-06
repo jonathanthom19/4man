@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Image from 'next/image';
+import PicksBoard from './PicksBoard';
 import type { Player, DraftedPlayer, DraftState, ArchivedDraft } from '@/lib/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -395,11 +396,8 @@ function LoginScreen({ onLogin, loading, error }: {
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff06_1px,transparent_1px),linear-gradient(to_bottom,#ffffff06_1px,transparent_1px)] bg-[size:48px_48px] pointer-events-none" />
       <div className="relative w-full max-w-sm">
         <div className="text-center mb-8">
-          <span className="inline-block bg-white/10 text-white/50 text-xs font-semibold px-3 py-1.5 rounded-full mb-4 tracking-wider uppercase">
-            Fantasy Football
-          </span>
-          <h1 className="text-3xl font-black text-white tracking-tight">4Man Drafting Portal</h1>
-          <p className="text-slate-500 text-sm mt-1">Enter your name to join</p>
+          <h1 className="text-3xl font-black text-white tracking-tight">4man Portal</h1>
+          <p className="text-slate-500 text-sm mt-1">Enter your name to login</p>
         </div>
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl shadow-black/40 p-6 space-y-4">
           <div>
@@ -413,9 +411,6 @@ function LoginScreen({ onLogin, loading, error }: {
               placeholder="Your name"
               className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-500"
             />
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
-              Only league members can access the draft
-            </p>
           </div>
           {error && (
             <p className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm rounded-lg px-4 py-2.5">
@@ -427,7 +422,7 @@ function LoginScreen({ onLogin, loading, error }: {
             disabled={!name.trim() || loading}
             className="w-full bg-slate-900 dark:bg-slate-100 hover:bg-slate-700 dark:hover:bg-white disabled:bg-slate-300 dark:disabled:bg-slate-600 text-white dark:text-slate-900 font-bold py-3 rounded-xl transition-colors text-sm"
           >
-            {loading ? 'Joining…' : 'Join Draft →'}
+            {loading ? 'Logging in…' : 'Login →'}
           </button>
         </div>
       </div>
@@ -1176,13 +1171,85 @@ function CompletedScreen({ names, picks, rounds, snake, onReset }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Section selection screen (after login, before draft or picks)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SectionScreen({ myName, hasDraft, loading, error, onDraft, onPicks, onSwitch }: {
+  myName:   string;
+  hasDraft: boolean;
+  loading:  boolean;
+  error:    string | null;
+  onDraft:  () => void;
+  onPicks:  () => void;
+  onSwitch: () => void;
+}) {
+  return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff06_1px,transparent_1px),linear-gradient(to_bottom,#ffffff06_1px,transparent_1px)] bg-[size:48px_48px] pointer-events-none" />
+      <div className="relative w-full max-w-md">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-black text-white tracking-tight">4Man Drafting Portal</h1>
+          <p className="text-slate-400 text-sm mt-1">Welcome back, <span className="text-white font-semibold">{myName}</span></p>
+        </div>
+
+        {error && (
+          <p className="mb-4 bg-red-950/40 border border-red-800 text-red-400 text-sm rounded-xl px-4 py-2.5">{error}</p>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <button
+            onClick={onDraft}
+            disabled={loading}
+            className="flex flex-col items-center gap-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-2xl p-6 text-left transition-all group disabled:opacity-50"
+          >
+            <span className="text-3xl">🏈</span>
+            <div>
+              <p className="font-bold text-white text-base">Draft Board</p>
+              <p className="text-slate-500 text-xs mt-0.5">
+                {hasDraft ? 'Draft in progress' : 'League draft setup'}
+              </p>
+            </div>
+            {hasDraft && (
+              <span className="self-start text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-semibold">
+                LIVE
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={onPicks}
+            disabled={loading}
+            className="flex flex-col items-center gap-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-2xl p-6 text-left transition-all group disabled:opacity-50"
+          >
+            <span className="text-3xl">📋</span>
+            <div>
+              <p className="font-bold text-white text-base">Weekly Picks</p>
+              <p className="text-slate-500 text-xs mt-0.5">NFL game picks</p>
+            </div>
+          </button>
+        </div>
+
+        <button
+          onClick={onSwitch}
+          className="mt-6 w-full text-center text-xs text-slate-600 hover:text-slate-400 transition-colors"
+        >
+          Switch account
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Root component
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Screen = 'login' | 'setup' | 'draft';
+type Screen  = 'login' | 'section' | 'setup' | 'draft';
+type AppMode = 'draft' | 'picks';
 
 export default function DraftBoard() {
   const [screen, setScreen]           = useState<Screen>('login');
+  const [appMode, setAppMode]         = useState<AppMode>('draft');
   const [myName, setMyName]           = useState<string | null>(null);
   const [draftState, setDraftState]   = useState<DraftState | null>(null);
   const [players, setPlayers]         = useState<Player[]>([]);
@@ -1360,9 +1427,24 @@ export default function DraftBoard() {
       setLocalMode(lm);
       setMyName(canonicalName);
       localStorage.setItem(NAME_KEY, canonicalName);
-      if (state) {
-        nullPollCount.current = 0;
-        setDraftState(state);
+      nullPollCount.current = 0;
+      setDraftState(state); // may be null — resolved when user picks Draft section
+      setScreen('section');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Could not connect');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ── Enter draft section (from section selection screen) ───────────────────
+
+  const handleEnterDraft = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setAppMode('draft');
+    try {
+      if (draftState) {
         const { players: fetched, updatedAt } = await loadPlayers();
         setPlayers(fetched);
         setPlayerUpdatedAt(updatedAt);
@@ -1373,11 +1455,11 @@ export default function DraftBoard() {
         setScreen('setup');
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Could not connect');
+      setError(e instanceof Error ? e.message : 'Could not load draft');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [draftState]);
 
   // ── Start draft ───────────────────────────────────────────────────────────
 
@@ -1538,6 +1620,20 @@ export default function DraftBoard() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  // ── Picks section ─────────────────────────────────────────────────────────
+
+  if (appMode === 'picks' && myName) {
+    return (
+      <PicksBoard
+        myName={myName}
+        dark={dark}
+        onLeave={() => { setAppMode('draft'); setScreen('section'); }}
+      />
+    );
+  }
+
+  // ── Draft section + section selection ─────────────────────────────────────
+
   return (
     <div className={dark ? 'dark' : ''}>
       {confirm      && <ConfirmModal {...confirm} />}
@@ -1547,6 +1643,18 @@ export default function DraftBoard() {
 
       {screen === 'login' && (
         <LoginScreen onLogin={handleLogin} loading={loading} error={error} />
+      )}
+
+      {screen === 'section' && myName && (
+        <SectionScreen
+          myName={myName}
+          hasDraft={Boolean(draftState)}
+          loading={loading}
+          error={error}
+          onDraft={handleEnterDraft}
+          onPicks={() => setAppMode('picks')}
+          onSwitch={switchUser}
+        />
       )}
 
       {screen === 'setup' && myName && (

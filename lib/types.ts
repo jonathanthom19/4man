@@ -34,6 +34,38 @@ export interface DraftState {
   draftName?: string;
 }
 
+// ─── NFL Picks ────────────────────────────────────────────────────────────────
+
+export interface NFLGame {
+  id: string;
+  homeTeam: string; // e.g. "Philadelphia Eagles"
+  awayTeam: string; // e.g. "Dallas Cowboys"
+  commenceTime: string; // ISO 8601
+  homeSpread: number | null; // negative = home favored
+  lockTime: number; // ms since epoch — picks for this game lock at this time
+}
+
+export interface WeeklyPick {
+  gameId: string;
+  selectedTeam: string; // full team name
+}
+
+export interface UserPicksSubmission {
+  userName: string;
+  submittedAt: number;
+  updatedAt: number;
+  picks: WeeklyPick[];
+}
+
+export interface PicksState {
+  weekLabel: string; // e.g. "Sep 4–7, 2025"
+  games: NFLGame[];
+  gamesRefreshedAt: number;
+  submissions: UserPicksSubmission[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export interface ArchivedDraft {
   id: string;
   archivedAt: number;
