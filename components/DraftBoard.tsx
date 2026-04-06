@@ -1595,7 +1595,7 @@ export default function DraftBoard() {
               {localMode && (
                 <span className="text-[10px] text-red-400 bg-red-950/40 border border-red-800 px-2 py-1 rounded-md font-semibold">⚠ No KV</span>
               )}
-              {draftState.picks.length > 0 && (
+              {isAdmin && draftState.picks.length > 0 && (
                 <button onClick={requestUndo} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg font-medium transition-colors">
                   ↩ Undo
                 </button>
