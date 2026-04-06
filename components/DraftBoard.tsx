@@ -1188,7 +1188,7 @@ function SectionScreen({ myName, hasDraft, loading, error, onDraft, onPicks, onS
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff06_1px,transparent_1px),linear-gradient(to_bottom,#ffffff06_1px,transparent_1px)] bg-[size:48px_48px] pointer-events-none" />
       <div className="relative w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-black text-white tracking-tight">4Man Drafting Portal</h1>
+          <h1 className="text-3xl font-black text-white tracking-tight">4man Portal</h1>
           <p className="text-slate-400 text-sm mt-1">Welcome back, <span className="text-white font-semibold">{myName}</span></p>
         </div>
 
