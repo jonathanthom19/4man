@@ -51,9 +51,9 @@ type PosFilter = (typeof POSITIONS)[number];
 
 const NAME_KEY        = 'fantasy-draft-name';
 const DARK_MODE_KEY   = 'fantasy-draft-dark';
-const POLL_MS         = 3000;
-const HEARTBEAT_MS    = 10_000;
-const PRESENCE_POLL_MS = 8_000;
+const POLL_MS          = 3_000;   // draft state sync
+const HEARTBEAT_MS     = 15_000;  // presence ping
+const PRESENCE_POLL_MS = 15_000;  // presence refresh
 
 interface PresenceUser { name: string; lastSeenAt: number; }
 

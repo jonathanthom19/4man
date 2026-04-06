@@ -1,8 +1,9 @@
-// Presence is a simple { name → lastSeenAt } map.
-// Active = pinged within the last STALE_MS milliseconds.
+// Each user's heartbeat is written atomically as an individual hash field,
+// so concurrent heartbeats from multiple users never overwrite each other.
 
 const PRESENCE_KEY = 'fantasy_presence';
-const STALE_MS     = 30_000;
+const STALE_MS     = 60_000;
+const EXPIRE_SECS  = 300;
 
 type PresenceMap = Record<string, number>;
 
@@ -12,40 +13,30 @@ function hasKv(): boolean {
   return Boolean(process.env.KV_REST_API_URL);
 }
 
-async function getMap(): Promise<PresenceMap> {
+export async function heartbeat(name: string): Promise<void> {
   if (hasKv()) {
     const { kv } = await import('@vercel/kv');
-    return (await kv.get<PresenceMap>(PRESENCE_KEY)) ?? {};
-  }
-  return memPresence;
-}
-
-async function saveMap(map: PresenceMap): Promise<void> {
-  if (hasKv()) {
-    const { kv } = await import('@vercel/kv');
-    await kv.set(PRESENCE_KEY, map, { ex: 300 }); // auto-expire after 5 min of no activity
+    // hset writes a single field atomically — no read-modify-write needed
+    await kv.hset(PRESENCE_KEY, { [name]: Date.now() });
+    await kv.expire(PRESENCE_KEY, EXPIRE_SECS);
     return;
   }
-  memPresence = map;
-}
-
-export async function heartbeat(name: string): Promise<void> {
-  const map = await getMap();
-  map[name] = Date.now();
-  await saveMap(map);
+  memPresence[name] = Date.now();
 }
 
 export async function getActive(): Promise<Array<{ name: string; lastSeenAt: number }>> {
-  const map   = await getMap();
-  const now   = Date.now();
-  const alive = Object.entries(map)
-    .filter(([, ts]) => now - ts < STALE_MS)
-    .sort(([, a], [, b]) => b - a) // most recent first
-    .map(([name, lastSeenAt]) => ({ name, lastSeenAt }));
+  let map: PresenceMap;
 
-  // Prune stale entries
-  const pruned = Object.fromEntries(Object.entries(map).filter(([, ts]) => now - ts < STALE_MS));
-  if (Object.keys(pruned).length !== Object.keys(map).length) await saveMap(pruned);
+  if (hasKv()) {
+    const { kv } = await import('@vercel/kv');
+    map = (await kv.hgetall<PresenceMap>(PRESENCE_KEY)) ?? {};
+  } else {
+    map = memPresence;
+  }
 
-  return alive;
+  const now = Date.now();
+  return Object.entries(map)
+    .filter(([, ts]) => now - Number(ts) < STALE_MS)
+    .sort(([, a], [, b]) => Number(b) - Number(a))
+    .map(([name, lastSeenAt]) => ({ name, lastSeenAt: Number(lastSeenAt) }));
 }
