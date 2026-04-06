@@ -1220,7 +1220,10 @@ export default function DraftBoard() {
     try {
       const { state, localMode: lm } = await apiFetchDraft();
       setLocalMode(lm);
-      setDraftState(state);
+      // Only overwrite state when we got a real response.
+      // A null result during an active draft is a transient KV hiccup —
+      // keep the last known good state rather than flashing the setup screen.
+      if (state !== null) setDraftState(state);
     } catch { /* silent */ }
   }, []);
 
