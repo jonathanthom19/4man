@@ -1319,9 +1319,14 @@ export default function DraftBoard() {
         return;
       }
 
+      // Normalize to canonical casing so name matches draftState.managers exactly
+      // (e.g. "charlie" → "Charlie"). Falls back to typed name for custom admin.
+      const canonicalName =
+        HARDCODED_MANAGERS.find(m => m.toLowerCase() === nameLower) ?? name;
+
       setLocalMode(lm);
-      setMyName(name);
-      localStorage.setItem(NAME_KEY, name);
+      setMyName(canonicalName);
+      localStorage.setItem(NAME_KEY, canonicalName);
       if (state) {
         setDraftState(state);
         const { players: fetched, updatedAt } = await loadPlayers();
