@@ -1203,6 +1203,7 @@ export default function DraftBoard() {
   const dragging                      = useRef(false);
   const pollRef                       = useRef<ReturnType<typeof setInterval> | null>(null);
   const draftStateRef                 = useRef<typeof draftState>(draftState);
+  const nullPollCount                 = useRef(0);
   const heartbeatRef                  = useRef<ReturnType<typeof setInterval> | null>(null);
   const presencePollRef               = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -1231,10 +1232,21 @@ export default function DraftBoard() {
       // overwritten by a lagging poll, and prevents re-render cascades when
       // the data is identical (same reference would be fine, new object isn't).
       if (state !== null) {
+        nullPollCount.current = 0;
         setDraftState(prev => {
           if (prev && state.updatedAt <= prev.updatedAt) return prev;
           return state;
         });
+      } else {
+        // null can be a transient KV hiccup OR a genuinely reset draft.
+        // Protect against single hiccups, but after 3 consecutive nulls
+        // (~9s) accept that the draft is gone and return to the lobby.
+        nullPollCount.current += 1;
+        if (nullPollCount.current >= 3) {
+          nullPollCount.current = 0;
+          setDraftState(null);
+          setScreen('setup');
+        }
       }
     } catch { /* silent */ }
   }, []);
@@ -1349,6 +1361,7 @@ export default function DraftBoard() {
       setMyName(canonicalName);
       localStorage.setItem(NAME_KEY, canonicalName);
       if (state) {
+        nullPollCount.current = 0;
         setDraftState(state);
         const { players: fetched, updatedAt } = await loadPlayers();
         setPlayers(fetched);
@@ -1376,6 +1389,7 @@ export default function DraftBoard() {
         apiStartDraft(names, rounds, adminName, snakeDraft, draftName),
         loadPlayers(),
       ]);
+      nullPollCount.current = 0;
       setDraftState(state);
       setPlayers(fetched);
       setPlayerUpdatedAt(updatedAt);
