@@ -1202,6 +1202,7 @@ export default function DraftBoard() {
   const bodyRef                       = useRef<HTMLDivElement>(null);
   const dragging                      = useRef(false);
   const pollRef                       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const draftStateRef                 = useRef<typeof draftState>(draftState);
   const heartbeatRef                  = useRef<ReturnType<typeof setInterval> | null>(null);
   const presencePollRef               = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -1211,7 +1212,11 @@ export default function DraftBoard() {
     const savedDark = localStorage.getItem(DARK_MODE_KEY);
     if (savedDark !== null) setDark(savedDark === 'true');
     const savedName = localStorage.getItem(NAME_KEY);
-    if (savedName) setMyName(savedName);
+    if (savedName) {
+      const canonical = HARDCODED_MANAGERS.find(m => m.toLowerCase() === savedName.toLowerCase()) ?? savedName;
+      setMyName(canonical);
+      if (canonical !== savedName) localStorage.setItem(NAME_KEY, canonical);
+    }
   }, []);
 
   // ── Polling ───────────────────────────────────────────────────────────────
@@ -1220,29 +1225,45 @@ export default function DraftBoard() {
     try {
       const { state, localMode: lm } = await apiFetchDraft();
       setLocalMode(lm);
-      // Only overwrite state when we got a real response.
-      // A null result during an active draft is a transient KV hiccup —
-      // keep the last known good state rather than flashing the setup screen.
-      if (state !== null) setDraftState(state);
+      // Only advance state forward — never backwards.
+      // kv.get() may briefly return a stale entry after a write (Upstash
+      // replica lag). Comparing updatedAt ensures a fresh pick can't be
+      // overwritten by a lagging poll, and prevents re-render cascades when
+      // the data is identical (same reference would be fine, new object isn't).
+      if (state !== null) {
+        setDraftState(prev => {
+          if (prev && state.updatedAt <= prev.updatedAt) return prev;
+          return state;
+        });
+      }
     } catch { /* silent */ }
   }, []);
+
+  // Keep the ref current so the poll effect can read draft state without
+  // depending on it (which would restart the interval on every state change).
+  useEffect(() => { draftStateRef.current = draftState; }, [draftState]);
 
   useEffect(() => {
     if (screen !== 'draft') {
       if (pollRef.current) clearInterval(pollRef.current);
       return;
     }
-    const draftComplete = draftState
-      ? draftState.currentPick > draftState.managers.length * draftState.rounds
-      : false;
-    if (draftComplete) {
+    const start = () => {
+      const s = draftStateRef.current;
+      const done = s ? s.currentPick > s.managers.length * s.rounds : false;
+      if (done) { if (pollRef.current) clearInterval(pollRef.current); return; }
+      pollDraft();
       if (pollRef.current) clearInterval(pollRef.current);
-      return;
-    }
-    pollDraft();
-    pollRef.current = setInterval(pollDraft, POLL_MS);
+      pollRef.current = setInterval(() => {
+        const cur = draftStateRef.current;
+        const complete = cur ? cur.currentPick > cur.managers.length * cur.rounds : false;
+        if (complete) { clearInterval(pollRef.current!); return; }
+        pollDraft();
+      }, POLL_MS);
+    };
+    start();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [screen, draftState, pollDraft]);
+  }, [screen, pollDraft]);
 
   // ── Heartbeat (keep presence alive while logged in) ───────────────────────
   // Only fires once the user is past the login screen to prevent premature
@@ -1370,7 +1391,7 @@ export default function DraftBoard() {
 
   const handleSaveSettings = useCallback(async (updates: Partial<DraftState>) => {
     const next = await apiUpdateSettings(updates);
-    setDraftState(next);
+    setDraftState(prev => (prev && next.updatedAt <= prev.updatedAt) ? prev : next);
   }, []);
 
   // ── Refresh players ───────────────────────────────────────────────────────
@@ -1388,7 +1409,7 @@ export default function DraftBoard() {
     setConfirm(null);
     try {
       const next = await apiPick(player, pickAs);
-      setDraftState(next);
+      setDraftState(prev => (prev && next.updatedAt <= prev.updatedAt) ? prev : next);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Pick failed');
     }
@@ -1402,8 +1423,10 @@ export default function DraftBoard() {
     const isDone2  = draftState.currentPick > n2 * draftState.rounds;
     const slot2    = isDone2 ? 0 : slotForPick(draftState.currentPick, n2, snake2);
     const onClock  = draftState.managers[slot2] ?? '';
-    const amAdmin  = Boolean(myName && (HARDCODED_ADMINS.has(myName.toLowerCase()) || (draftState.adminName && myName === draftState.adminName)));
-    const pickAs   = (amAdmin && adminDraftForAll) ? onClock : myName;
+    const amAdmin  = Boolean(myName && (HARDCODED_ADMINS.has(myName.toLowerCase()) || (draftState.adminName && myName.toLowerCase() === draftState.adminName.toLowerCase())));
+    // Always use the canonical name from the managers array so it matches the server's case exactly
+    const myCanonical = draftState.managers.find(m => m.toLowerCase() === myName.toLowerCase()) ?? myName;
+    const pickAs   = (amAdmin && adminDraftForAll) ? onClock : myCanonical;
     setConfirm({
       title:        'Draft player?',
       message:      `Draft ${player.name} (${player.pos}, ${player.team}) for ${pickAs}?`,
@@ -1478,7 +1501,7 @@ export default function DraftBoard() {
   const curSlot    = draftState && !isDone ? slotForPick(draftState.currentPick, n, snake) : 0;
   const curManager = draftState?.managers[curSlot] ?? '';
   const curColors  = colorFor(curManager);
-  const mySlot     = myName && draftState ? draftState.managers.findIndex(m => m === myName) : -1;
+  const mySlot     = myName && draftState ? draftState.managers.findIndex(m => m.toLowerCase() === myName.toLowerCase()) : -1;
   const isAdmin    = Boolean(
     myName && (
       HARDCODED_ADMINS.has(myName.toLowerCase()) ||
@@ -1578,6 +1601,14 @@ export default function DraftBoard() {
                 {dark ? <SunIcon /> : <MoonIcon />}
               </button>
             </nav>
+
+            {/* Error toast */}
+            {error && (
+              <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 bg-red-600 text-white text-sm font-medium">
+                <span className="flex-1">{error}</span>
+                <button onClick={() => setError(null)} className="text-white/70 hover:text-white text-lg leading-none">✕</button>
+              </div>
+            )}
 
             {/* On the clock banner */}
             <div className={`shrink-0 ${curColors.header} px-5 py-2.5 flex items-center justify-between`}>
