@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/players/refresh",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}
