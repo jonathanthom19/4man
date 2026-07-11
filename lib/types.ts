@@ -55,6 +55,8 @@ export interface NFLGame {
 export interface WeeklyPick {
   gameId: string;
   selectedTeam: string; // full team name
+  /** Spread displayed when the member made this pick. */
+  lineAtPick?: number | null;
   result?: PickResult;
 }
 

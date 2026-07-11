@@ -47,7 +47,7 @@ function weekLabel(games: NFLGame[], sportLabel: string): string {
 function parseWeek(body: unknown): number | undefined {
   if (!body || typeof body !== 'object') return undefined;
   const week = (body as { week?: unknown }).week;
-  if (typeof week !== 'number' || !Number.isInteger(week) || week < 1 || week > 22) return undefined;
+  if (typeof week !== 'number' || !Number.isInteger(week) || week < 1 || week > 20) return undefined;
   return week;
 }
 

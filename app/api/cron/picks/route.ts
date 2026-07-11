@@ -52,7 +52,7 @@ export async function GET(req: Request) {
 
   if (rollover) {
     let current = await getPicksState();
-    const nextWeek = Math.min(18, (current?.weekNumber ?? 0) + 1) || 1;
+    const nextWeek = Math.min(20, (current?.weekNumber ?? 0) + 1) || 1;
     if (current?.games.length) {
       if (!current.rolloverPending) {
         current = { ...current, rolloverPending: true };

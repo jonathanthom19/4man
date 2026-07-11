@@ -47,3 +47,7 @@ export async function archivePicksWeek(week: ArchivedPicksWeek): Promise<void> {
   const filtered = history.filter(h => h.id !== week.id);
   await saveHistory([week, ...filtered]);
 }
+
+export async function setPicksHistory(history: ArchivedPicksWeek[]): Promise<void> {
+  await saveHistory(history);
+}

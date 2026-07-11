@@ -60,6 +60,10 @@ async function apiFetchReadiness(adminName: string): Promise<{ issues: WeekIssue
   if (!res.ok) return { issues: [], edits: [], rolloverPending: false };
   return res.json();
 }
+async function apiEditArchive(adminName: string, archiveId: string, userName: string, gameId: string, selectedTeam: string): Promise<ArchivedPicksWeek> {
+  const res = await fetch('/api/picks/history', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adminName, archiveId, userName, gameId, selectedTeam }) });
+  const data = await res.json(); if (!res.ok) throw new Error(data.error ?? 'Archive edit failed'); return data.week;
+}
 
 async function apiSubmitPicks(
   userName: string,
@@ -123,6 +127,11 @@ async function apiAdminEditPick(adminName: string, userName: string, gameId: str
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Manual edit failed');
+}
+
+async function apiAdminUnlockLine(adminName: string, gameId: string): Promise<void> {
+  const res = await fetch('/api/picks', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adminName, gameId, unlock: true }) });
+  if (!res.ok) throw new Error((await res.json()).error ?? 'Unlock failed');
 }
 
 async function apiSeedGames(): Promise<PicksState> {
@@ -229,6 +238,7 @@ export default function PicksBoard({
     try {
       const picks: WeeklyPick[] = Object.entries(draftPicks).map(([gameId, selectedTeam]) => ({
         gameId, selectedTeam,
+        lineAtPick: picksState.games.find(g => g.id === gameId)?.homeSpread ?? null,
       }));
       const next = await apiSubmitPicks(myName, picks, lockOfWeekGameId);
       setPicksState(next);
@@ -428,6 +438,9 @@ export default function PicksBoard({
                       ✓ You submitted · {formatTs(mySubmission.updatedAt)}
                     </p>
                   )}
+                  <p className="text-xs text-slate-500">
+                    {mySubmission?.picks.length ?? 0} of {picksState.games.length} picks saved · {mySubmission?.lockOfWeekGameId ? 'Lock selected' : 'Lock missing'}
+                  </p>
                   {picksState.gradedAt && picksState.lastWeeklyPoolDeltas && (
                     <p className="text-xs text-slate-500">
                       Graded · your week:{' '}
@@ -514,8 +527,8 @@ export default function PicksBoard({
                       onChange={e => setNflWeek(Number(e.target.value))}
                       className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-slate-800 dark:text-slate-100 font-semibold"
                     >
-                      {Array.from({ length: 18 }, (_, i) => i + 1).map(w => (
-                        <option key={w} value={w}>Week {w}</option>
+                      {Array.from({ length: 20 }, (_, i) => i + 1).map(w => (
+                        <option key={w} value={w}>{w === 19 ? 'Wild Card' : w === 20 ? 'Divisional' : `Week ${w}`}</option>
                       ))}
                     </select>
                   </label>
@@ -552,6 +565,7 @@ export default function PicksBoard({
                       <label className="flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" checked={editAsLock} onChange={e => setEditAsLock(e.target.checked)} /> Set as Lock of the Week</label>
                       <input value={editReason} onChange={e => setEditReason(e.target.value)} placeholder="Reason for correction (optional)" className="w-full rounded-lg border p-2 text-xs bg-white dark:bg-slate-900" />
                       <button onClick={handleManualEdit} disabled={loading || !editGameId || !editTeam} className="w-full py-2 rounded-lg text-xs font-semibold bg-slate-800 text-white disabled:opacity-40">Save override</button>
+                      <button onClick={async () => { if (!editGameId) return; await apiAdminUnlockLine(myName, editGameId); await load(); setSuccess('Line unlocked.'); }} disabled={!editGameId} className="w-full py-2 rounded-lg text-xs font-semibold border border-amber-300 text-amber-700 disabled:opacity-40">Unlock selected game line</button>
                       {adminEdits.length > 0 && (
                         <details className="text-[11px] text-slate-500">
                           <summary className="cursor-pointer font-semibold">Correction log ({adminEdits.length})</summary>
@@ -757,6 +771,14 @@ export default function PicksBoard({
                 showPool
                 balancesAfterWeek={archivedWeek.balancesAfterWeek}
               />
+              {admin && (
+                <div className="p-3 border-t flex flex-wrap gap-2 bg-white dark:bg-slate-900">
+                  <select value={editUser} onChange={e => setEditUser(e.target.value)} className="border rounded p-2 text-xs bg-inherit">{LEAGUE_MEMBERS.map(n => <option key={n}>{n}</option>)}</select>
+                  <select value={editGameId} onChange={e => { setEditGameId(e.target.value); setEditTeam(''); }} className="border rounded p-2 text-xs bg-inherit"><option value="">Game</option>{archivedWeek.games.map(g => <option key={g.id} value={g.id}>{mascot(g.awayTeam)} @ {mascot(g.homeTeam)}</option>)}</select>
+                  <select value={editTeam} onChange={e => setEditTeam(e.target.value)} className="border rounded p-2 text-xs bg-inherit"><option value="">Pick</option>{archivedWeek.games.filter(g => g.id === editGameId).flatMap(g => [g.awayTeam, g.homeTeam]).map(t => <option key={t}>{t}</option>)}</select>
+                  <button disabled={!editGameId || !editTeam} onClick={async () => { try { const week = await apiEditArchive(myName, archivedWeek.id, editUser, editGameId, editTeam); setArchivedWeek(week); await load(); setSuccess('Archived week corrected and season recalculated.'); } catch (e) { setError(e instanceof Error ? e.message : 'Edit failed'); } }} className="bg-slate-800 text-white rounded px-3 text-xs disabled:opacity-40">Correct archived pick</button>
+                </div>
+              )}
             </div>
           )}
 

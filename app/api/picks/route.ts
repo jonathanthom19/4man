@@ -58,6 +58,18 @@ export async function POST(req: Request) {
     const now = Date.now();
     const existing = state.submissions.find(s => s.userName === canonical);
 
+    const lineConflicts = picks.flatMap(pick => {
+      const game = state.games.find(g => g.id === pick.gameId);
+      if (!game || game.lineLockedAt == null || pick.lineAtPick === game.homeSpread) return [];
+      return [`${game.awayTeam} at ${game.homeTeam} (now ${game.homeSpread ?? 'N/A'})`];
+    });
+    if (lineConflicts.length) {
+      return Response.json({
+        error: `The line changed for: ${lineConflicts.join(', ')}. Review and reselect those game(s).`,
+        games: lineConflicts,
+      }, { status: 409 });
+    }
+
     // Build a map of previously submitted picks so we can preserve locked ones
     const existingPickMap = new Map<string, string>();
     existing?.picks.forEach(p => existingPickMap.set(p.gameId, p.selectedTeam));
@@ -73,7 +85,7 @@ export async function POST(req: Request) {
         return { gameId: game.id, selectedTeam: existingPick };
       }
       if (submitted && !locked && [game.homeTeam, game.awayTeam].includes(submitted.selectedTeam)) {
-        return { gameId: game.id, selectedTeam: submitted.selectedTeam };
+        return { gameId: game.id, selectedTeam: submitted.selectedTeam, lineAtPick: game.homeSpread };
       }
       // Not submitted yet and not locked — omit (partial picks allowed)
       return null;
@@ -111,11 +123,13 @@ export async function POST(req: Request) {
         .filter(p => !state.submissions.some(s => s.picks.some(existingPick => existingPick.gameId === p.gameId)))
         .map(p => p.gameId),
     );
-    const games = state.games.map(game =>
-      newlyPickedGameIds.has(game.id) && game.lineLockedAt == null
+    const games = state.games.map(game => {
+      const hasLivePick = submissions.some(s => s.picks.some(p => p.gameId === game.id));
+      if (!hasLivePick) return { ...game, lineLockedAt: undefined };
+      return newlyPickedGameIds.has(game.id) && game.lineLockedAt == null
         ? { ...game, lineLockedAt: now }
-        : game,
-    );
+        : game;
+    });
 
     const next = { ...state, games, submissions };
     await setPicksState(next);
@@ -188,6 +202,29 @@ export async function PUT(req: Request) {
     const regraded = gradePicksState(next);
     await setPicksState(regraded);
     return Response.json({ state: regraded });
+  } catch (err: unknown) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
+  }
+}
+
+/** Admin line override/unlock for a single active game. */
+export async function PATCH(req: Request) {
+  try {
+    const { adminName, gameId, homeSpread, unlock } = await req.json() as {
+      adminName: string; gameId: string; homeSpread?: number | null; unlock?: boolean;
+    };
+    if (!isLeagueAdmin(adminName)) return Response.json({ error: 'Admin access required' }, { status: 403 });
+    const state = await getPicksState();
+    const game = state?.games.find(g => g.id === gameId);
+    if (!state || !game) return Response.json({ error: 'Game not found' }, { status: 404 });
+    const games = state.games.map(g => g.id === gameId ? {
+      ...g,
+      ...(homeSpread !== undefined ? { homeSpread } : {}),
+      ...(unlock ? { lineLockedAt: undefined } : {}),
+    } : g);
+    const next = gradePicksState({ ...state, games });
+    await setPicksState(next);
+    return Response.json({ state: next });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }

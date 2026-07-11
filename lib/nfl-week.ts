@@ -78,7 +78,8 @@ export function detectCurrentNflWeek(games: NFLGame[], now = Date.now()): number
 }
 
 export function formatNflWeekLabel(games: NFLGame[], sportLabel: string, weekNumber: number): string {
-  const prefix = `${sportLabel} Week ${weekNumber}`;
+  const round = weekNumber === 19 ? 'Wild Card' : weekNumber === 20 ? 'Divisional Round' : `Week ${weekNumber}`;
+  const prefix = `${sportLabel} ${round}`;
   if (!games.length) return prefix;
 
   const times = games.map(g => kickoffMs(g));

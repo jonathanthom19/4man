@@ -12,9 +12,9 @@ import {
 import type { NFLGame, UserPicksSubmission } from '@/lib/types';
 
 function resultClass(result?: string): string {
-  if (result === 'win') return 'text-emerald-600 dark:text-emerald-400 font-bold';
-  if (result === 'loss') return 'text-red-600 dark:text-red-400 font-bold';
-  if (result === 'push') return 'text-slate-500 font-semibold';
+  if (result === 'win') return 'text-emerald-800 dark:text-emerald-200 font-bold bg-emerald-100 dark:bg-emerald-950/70 rounded px-2 py-1';
+  if (result === 'loss') return 'text-red-800 dark:text-red-200 font-bold bg-red-100 dark:bg-red-950/70 rounded px-2 py-1';
+  if (result === 'push') return 'text-yellow-800 dark:text-yellow-200 font-semibold bg-yellow-100 dark:bg-yellow-950/70 rounded px-2 py-1';
   return '';
 }
 
