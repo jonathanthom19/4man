@@ -21,7 +21,9 @@ export async function GET(req: Request) {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   const from = process.env.TWILIO_FROM_NUMBER;
-  if (!sid || !token || !from) return Response.json({ error: 'Twilio environment variables are not configured' }, { status: 503 });
+  if (!sid || !token || !from) {
+    return Response.json({ sent: 0, configured: false, message: 'Twilio environment variables are not configured' });
+  }
   const state = await getPicksState();
   if (!state?.games.length) return Response.json({ sent: 0 });
 
