@@ -756,6 +756,7 @@ function LobbyScreen(props: {
   isAdmin:          boolean;
   onStart:          (names: string[], rounds: number, adminName: string, snakeDraft: boolean, draftName: string) => void;
   onRefreshPlayers: () => void;
+  onBack:           () => void;
   onSwitchUser:     () => void;
   onDeleteHistory:  (id: string) => void;
   loading:          boolean;
@@ -781,6 +782,9 @@ function LobbyScreen(props: {
       {/* Top bar */}
       <div className="relative shrink-0 flex items-center justify-between px-6 pt-6 pb-0">
         <div>
+          <button type="button" onClick={props.onBack} className="mb-3 text-xs text-slate-500 hover:text-white transition-colors">
+            ← Back
+          </button>
           <div className="flex items-center gap-2 mb-1">
             <span className="bg-white/10 text-white/50 text-[10px] font-semibold px-2.5 py-1 rounded-full tracking-wider uppercase">Fantasy Football</span>
           </div>
@@ -1631,6 +1635,7 @@ export default function DraftBoard() {
       <PicksBoard
         myName={myName}
         dark={dark}
+        onToggleDark={toggleDark}
         onLeave={() => { setAppMode('draft'); setScreen('section'); }}
       />
     );
@@ -1643,6 +1648,17 @@ export default function DraftBoard() {
       {confirm      && <ConfirmModal {...confirm} />}
       {showSettings && draftState && (
         <SettingsModal state={draftState} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} />
+      )}
+      {!(screen === 'draft' && !isDone) && (
+        <button
+          type="button"
+          onClick={toggleDark}
+          className="fixed right-4 bottom-4 z-50 flex items-center justify-center w-10 h-10 rounded-full bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-lg hover:scale-105 transition-transform"
+          aria-label="Toggle dark mode"
+          title="Toggle light/dark mode"
+        >
+          {dark ? <SunIcon /> : <MoonIcon />}
+        </button>
       )}
 
       {screen === 'login' && (
@@ -1664,6 +1680,7 @@ export default function DraftBoard() {
       {screen === 'setup' && myName && (
         <LobbyScreen
           myName={myName} isAdmin={isAdmin} onStart={handleStart} onRefreshPlayers={handleRefreshPlayers}
+          onBack={() => setScreen('section')}
           onSwitchUser={switchUser} onDeleteHistory={handleDeleteHistory}
           loading={loading} refreshing={refreshing} error={error} playerUpdatedAt={playerUpdatedAt}
           presence={presence} history={history}

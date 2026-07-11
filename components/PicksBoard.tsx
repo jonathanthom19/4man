@@ -69,7 +69,8 @@ async function apiSubmitPicks(
   const res  = await fetch('/api/picks', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ userName, picks, lockOfWeekGameId }),
+    // Send an empty value explicitly so removing a selected Lock is persisted.
+    body:    JSON.stringify({ userName, picks, lockOfWeekGameId: lockOfWeekGameId ?? '' }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Submit failed');
@@ -138,11 +139,12 @@ type Screen = 'home' | 'make' | 'view' | 'history' | 'archiveView';
 // ─── PicksBoard ───────────────────────────────────────────────────────────────
 
 export default function PicksBoard({
-  myName, dark, onLeave,
+  myName, dark, onLeave, onToggleDark,
 }: {
   myName: string;
   dark:   boolean;
   onLeave: () => void;
+  onToggleDark: () => void;
 }) {
   const admin = isLeagueAdmin(myName);
 
@@ -216,7 +218,8 @@ export default function PicksBoard({
 
   const handleSubmit = async () => {
     if (!picksState) return;
-    if (!Object.keys(draftPicks).length) {
+    const existingSubmission = picksState.submissions.find(s => s.userName === myName);
+    if (!Object.keys(draftPicks).length && !existingSubmission) {
       setError('Make at least one pick before saving.');
       return;
     }
@@ -381,6 +384,9 @@ export default function PicksBoard({
           </button>
           <span className="text-xs text-slate-300 font-medium">{myName}</span>
           {admin && <span className="text-[10px] text-amber-500 bg-amber-950/40 px-1.5 py-0.5 rounded font-semibold">admin</span>}
+          <button type="button" onClick={onToggleDark} className="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors" aria-label="Toggle dark mode">
+            {dark ? '☀' : '☾'}
+          </button>
         </nav>
 
         {error && (
@@ -640,7 +646,19 @@ export default function PicksBoard({
                           return (
                             <button
                               key={team}
-                              onClick={() => !locked && setDraftPicks(prev => ({ ...prev, [game.id]: team }))}
+                              onClick={() => {
+                                if (locked) return;
+                                if (isSelected) {
+                                  setDraftPicks(prev => {
+                                    const next = { ...prev };
+                                    delete next[game.id];
+                                    return next;
+                                  });
+                                  if (lockOfWeekGameId === game.id) setLockOfWeekGameId(undefined);
+                                } else {
+                                  setDraftPicks(prev => ({ ...prev, [game.id]: team }));
+                                }
+                              }}
                               disabled={locked}
                               className={`flex flex-col items-center gap-2 rounded-xl py-4 px-2 disabled:cursor-not-allowed ${
                                 isSelected ? 'bg-slate-900 dark:bg-white ring-2 ring-slate-900 dark:ring-white' : 'bg-slate-50 dark:bg-slate-800'
@@ -679,7 +697,7 @@ export default function PicksBoard({
               {!allLocked && (
                 <button
                   onClick={handleSubmit}
-                  disabled={!Object.keys(draftPicks).length || loading}
+                  disabled={(!Object.keys(draftPicks).length && !mySubmission) || loading}
                   className="py-3 rounded-xl text-sm font-bold bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 disabled:opacity-40"
                 >
                   {loading ? 'Saving…' : mySubmission ? 'Save Picks' : 'Save Picks'}
