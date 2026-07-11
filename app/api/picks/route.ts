@@ -1,15 +1,32 @@
-import { canonicalMemberName, isLeagueMember } from '@/lib/league-members';
+import { canonicalMemberName, isLeagueAdmin, isLeagueMember } from '@/lib/league-members';
 import { getPicksState, setPicksState } from '@/lib/picks-store';
 import type { UserPicksSubmission, WeeklyPick } from '@/lib/types';
+import { gradePicksState } from '@/lib/picks-grade-week';
 
 function isLocked(lockTime: number): boolean {
   return Date.now() >= lockTime;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const state = await getPicksState();
-    return Response.json({ state });
+    if (!state) return Response.json({ state: null });
+
+    const viewer = canonicalMemberName(new URL(req.url).searchParams.get('viewer') ?? '');
+    if (!viewer) return Response.json({ error: 'Valid viewer is required' }, { status: 400 });
+    const mine = state.submissions.find(s => s.userName === viewer);
+    const visibleGameIds = new Set(mine?.picks.map(p => p.gameId) ?? []);
+    const submissions = state.submissions.map(sub => ({
+      ...sub,
+      picks: sub.userName === viewer
+        ? sub.picks
+        : sub.picks.filter(p => visibleGameIds.has(p.gameId)),
+      lockOfWeekGameId:
+        sub.userName === viewer || (sub.lockOfWeekGameId && visibleGameIds.has(sub.lockOfWeekGameId))
+          ? sub.lockOfWeekGameId
+          : undefined,
+    }));
+    return Response.json({ state: { ...state, submissions } });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
@@ -39,7 +56,7 @@ export async function POST(req: Request) {
     }
 
     const now = Date.now();
-    const existing = state.submissions.find(s => s.userName === userName);
+    const existing = state.submissions.find(s => s.userName === canonical);
 
     // Build a map of previously submitted picks so we can preserve locked ones
     const existingPickMap = new Map<string, string>();
@@ -55,17 +72,26 @@ export async function POST(req: Request) {
         // Game is locked — preserve the existing pick regardless of what was submitted
         return { gameId: game.id, selectedTeam: existingPick };
       }
-      if (submitted) {
+      if (submitted && !locked && [game.homeTeam, game.awayTeam].includes(submitted.selectedTeam)) {
         return { gameId: game.id, selectedTeam: submitted.selectedTeam };
       }
       // Not submitted yet and not locked — omit (partial picks allowed)
       return null;
     }).filter((p): p is WeeklyPick => p !== null);
 
+    const requestedLockGame = state.games.find(g => g.id === lockOfWeekGameId);
+    const existingLockGame = state.games.find(g => g.id === existing?.lockOfWeekGameId);
+    const canChangeLock =
+      (!requestedLockGame || !isLocked(requestedLockGame.lockTime)) &&
+      (!existingLockGame || !isLocked(existingLockGame.lockTime));
     const resolvedLock =
       lockOfWeekGameId !== undefined
-        ? lockOfWeekGameId || undefined
+        ? (canChangeLock ? lockOfWeekGameId || undefined : existing?.lockOfWeekGameId)
         : existing?.lockOfWeekGameId;
+
+    if (resolvedLock && !mergedPicks.some(p => p.gameId === resolvedLock)) {
+      return Response.json({ error: 'Lock of the Week must be one of your saved picks' }, { status: 400 });
+    }
 
     const submission: UserPicksSubmission = {
       userName: canonical,
@@ -80,9 +106,88 @@ export async function POST(req: Request) {
       submission,
     ].sort((a, b) => a.submittedAt - b.submittedAt);
 
-    const next = { ...state, submissions };
+    const newlyPickedGameIds = new Set(
+      mergedPicks
+        .filter(p => !state.submissions.some(s => s.picks.some(existingPick => existingPick.gameId === p.gameId)))
+        .map(p => p.gameId),
+    );
+    const games = state.games.map(game =>
+      newlyPickedGameIds.has(game.id) && game.lineLockedAt == null
+        ? { ...game, lineLockedAt: now }
+        : game,
+    );
+
+    const next = { ...state, games, submissions };
     await setPicksState(next);
     return Response.json({ state: next });
+  } catch (err: unknown) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
+  }
+}
+
+/** Admin override for a missing/corrected pick or Lock of the Week. */
+export async function PUT(req: Request) {
+  try {
+    const { adminName, userName, gameId, selectedTeam, setAsLock, reason } = await req.json() as {
+      adminName: string; userName: string; gameId: string; selectedTeam: string; setAsLock?: boolean; reason?: string;
+    };
+    if (!isLeagueAdmin(adminName)) {
+      return Response.json({ error: 'Admin access required' }, { status: 403 });
+    }
+    const canonical = canonicalMemberName(userName);
+    const state = await getPicksState();
+    const game = state?.games.find(g => g.id === gameId);
+    if (!state || !game || !canonical || ![game.homeTeam, game.awayTeam].includes(selectedTeam)) {
+      return Response.json({ error: 'Invalid member, game, or team' }, { status: 400 });
+    }
+    const now = Date.now();
+    const editTiming: 'before-kickoff' | 'after-kickoff' =
+      now < new Date(game.commenceTime).getTime() ? 'before-kickoff' : 'after-kickoff';
+    const existing = state.submissions.find(s => s.userName === canonical);
+    const previousPick = existing?.picks.find(p => p.gameId === gameId);
+    const picks = [
+      ...(existing?.picks.filter(p => p.gameId !== gameId) ?? []),
+      { gameId, selectedTeam },
+    ];
+    const submission: UserPicksSubmission = {
+      userName: canonical,
+      submittedAt: existing?.submittedAt ?? now,
+      updatedAt: now,
+      picks,
+      ...(setAsLock ? { lockOfWeekGameId: gameId } : existing?.lockOfWeekGameId
+        ? { lockOfWeekGameId: existing.lockOfWeekGameId } : {}),
+    };
+    const games = state.games.map(existingGame =>
+      existingGame.id === gameId && existingGame.lineLockedAt == null
+        ? { ...existingGame, lineLockedAt: now }
+        : existingGame,
+    );
+    const next = {
+      ...state,
+      games,
+      submissions: [...state.submissions.filter(s => s.userName !== canonical), submission],
+      gradedAt: undefined,
+      lastWeeklyPoolDeltas: undefined,
+      adminEdits: [
+        ...(state.adminEdits ?? []),
+        {
+          id: `${now}-${canonical}-${gameId}`,
+          editedAt: now,
+          adminName,
+          userName: canonical,
+          gameId,
+          previousTeam: previousPick?.selectedTeam,
+          selectedTeam,
+          previousLockGameId: existing?.lockOfWeekGameId,
+          setAsLock: Boolean(setAsLock),
+          timing: editTiming,
+          ...(reason?.trim() ? { reason: reason.trim() } : {}),
+        },
+      ],
+    };
+    const regraded = gradePicksState(next);
+    await setPicksState(regraded);
+    return Response.json({ state: regraded });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }

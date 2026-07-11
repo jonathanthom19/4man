@@ -51,6 +51,10 @@ function parseWeek(body: unknown): number | undefined {
   return week;
 }
 
+function parseManual(body: unknown): boolean {
+  return Boolean(body && typeof body === 'object' && (body as { manual?: unknown }).manual === true);
+}
+
 export async function POST(req: Request) {
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) {
@@ -58,9 +62,11 @@ export async function POST(req: Request) {
   }
 
   let requestedWeek: number | undefined;
+  let manual = false;
   try {
     const body = await req.json();
     requestedWeek = parseWeek(body);
+    manual = parseManual(body);
   } catch {
     requestedWeek = undefined;
   }
@@ -85,7 +91,7 @@ export async function POST(req: Request) {
     const current = await getPicksState();
     const priorById = new Map((current?.games ?? []).map(g => [g.id, g]));
 
-    const allGames: NFLGame[] = data
+    const fetchedGames: NFLGame[] = data
       .map((g): NFLGame => {
         let homeSpread: number | null = null;
         const book = g.bookmakers.find(b => b.key === 'draftkings');
@@ -97,19 +103,28 @@ export async function POST(req: Request) {
           }
         }
         const prior = priorById.get(g.id);
+        const spreadFrozen = prior?.lineLockedAt != null && !manual;
         return {
           id:           g.id,
           homeTeam:     g.home_team,
           awayTeam:     g.away_team,
           commenceTime: g.commence_time,
-          homeSpread,
-          lockTime:     computeLockTime(g.commence_time, sport.useNflSundayLockRules),
+          homeSpread: spreadFrozen ? prior.homeSpread : homeSpread,
+          lineLockedAt: prior?.lineLockedAt,
+          lockTime:     computeLockTime(g.commence_time),
           homeScore:    prior?.homeScore,
           awayScore:    prior?.awayScore,
           completed:    prior?.completed,
         };
       })
-      .sort((a, b) => new Date(a.commenceTime).getTime() - new Date(b.commenceTime).getTime());
+    // The odds feed generally contains upcoming games only. Retain current-week
+    // games that disappeared from that feed after kickoff so scores and picks
+    // are never lost during an automatic line refresh.
+    const fetchedIds = new Set(fetchedGames.map(g => g.id));
+    const allGames = [
+      ...fetchedGames,
+      ...(current?.games ?? []).filter(g => !fetchedIds.has(g.id)),
+    ].sort((a, b) => new Date(a.commenceTime).getTime() - new Date(b.commenceTime).getTime());
 
     let games = allGames;
     let weekNumber: number | undefined;
@@ -142,6 +157,8 @@ export async function POST(req: Request) {
       season:           current?.season ?? seasonFromGames(games),
       gradedAt:         current?.gradedAt,
       lastWeeklyPoolDeltas: current?.lastWeeklyPoolDeltas,
+      rolloverPending: current?.rolloverPending,
+      adminEdits: current?.adminEdits,
     };
 
     await setPicksState(next);

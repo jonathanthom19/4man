@@ -1,5 +1,6 @@
-import { gradePick, aggregatePoolDeltas, computeLockResults, seasonFromGames } from './picks-grading';
+import { gradePick, aggregatePoolDeltas, seasonFromGames } from './picks-grading';
 import type { PicksState, UserPicksSubmission } from './types';
+import { LEAGUE_MEMBERS } from './league-members';
 
 /** Attach ATS results to picks and mark games completed from scores. */
 export function gradePicksState(state: PicksState): PicksState {
@@ -14,8 +15,11 @@ export function gradePicksState(state: PicksState): PicksState {
     ...sub,
     picks: sub.picks.map(p => {
       const game = games.find(g => g.id === p.gameId);
+      const allSubmitted = game && LEAGUE_MEMBERS.every(user =>
+        state.submissions.find(s => s.userName === user)?.picks.some(entry => entry.gameId === game.id),
+      );
       return game
-        ? { ...p, result: gradePick(p.selectedTeam, game) }
+        ? { ...p, result: allSubmitted ? gradePick(p.selectedTeam, game) : 'pending' }
         : p;
     }),
   }));

@@ -63,7 +63,7 @@ export function poolDeltasForGame(
     return Object.fromEntries(active.map(e => [e.user, e.result === 'win' ? 90 : -30]));
   }
   if (w === 3 && l === 1) {
-    return Object.fromEntries(active.map(e => [e.user, e.result === 'win' ? 30 : -90]));
+    return Object.fromEntries(active.map(e => [e.user, e.result === 'win' ? 15 : -45]));
   }
   if (w === 2 && l === 2) {
     return Object.fromEntries(active.map(e => [e.user, e.result === 'win' ? 30 : -30]));
@@ -84,6 +84,8 @@ export function aggregatePoolDeltas(
       const pick = sub.picks.find(p => p.gameId === game.id);
       picksByUser[sub.userName] = pick?.selectedTeam;
     }
+    // A four-person pool game is unresolved until all four entries exist.
+    if (LEAGUE_MEMBERS.some(user => !picksByUser[user])) continue;
     const deltas = poolDeltasForGame(game, picksByUser);
     for (const [user, delta] of Object.entries(deltas)) {
       totals[user] = (totals[user] ?? 0) + delta;
@@ -103,6 +105,10 @@ export function computeLockResults(
     const game = games.find(g => g.id === sub.lockOfWeekGameId);
     const pick = sub.picks.find(p => p.gameId === sub.lockOfWeekGameId);
     if (!game || !pick) continue;
+    const allSubmitted = LEAGUE_MEMBERS.every(user =>
+      submissions.find(s => s.userName === user)?.picks.some(p => p.gameId === game.id),
+    );
+    if (!allSubmitted) continue;
     results[sub.userName] = gradePick(pick.selectedTeam, game);
   }
   return results;

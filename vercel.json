@@ -3,6 +3,14 @@
     {
       "path": "/api/players/refresh",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/picks",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/picks/rollover",
+      "schedule": "0 13 * * 3"
     }
   ]
 }

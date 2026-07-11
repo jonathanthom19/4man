@@ -44,6 +44,8 @@ export interface NFLGame {
   awayTeam: string; // e.g. "Dallas Cowboys"
   commenceTime: string; // ISO 8601
   homeSpread: number | null; // negative = home favored
+  /** Set when the first member saves a pick; automatic line updates stop. */
+  lineLockedAt?: number;
   lockTime: number; // ms since epoch — picks for this game lock at this time
   homeScore?: number | null;
   awayScore?: number | null;
@@ -78,6 +80,26 @@ export interface PicksState {
   /** Pool $ deltas applied when this week was last graded (before archive). */
   lastWeeklyPoolDeltas?: Record<string, number>;
   gradedAt?: number;
+  /** Wednesday rollover waits here until missing picks/locks are resolved. */
+  rolloverPending?: boolean;
+  /** Previous week is archived; do not load the next slate before Wednesday. */
+  awaitingWednesday?: boolean;
+  /** Append-only record of administrator corrections. */
+  adminEdits?: PicksAdminEdit[];
+}
+
+export interface PicksAdminEdit {
+  id: string;
+  editedAt: number;
+  adminName: string;
+  userName: string;
+  gameId: string;
+  previousTeam?: string;
+  selectedTeam: string;
+  previousLockGameId?: string;
+  setAsLock: boolean;
+  timing: 'before-kickoff' | 'after-kickoff';
+  reason?: string;
 }
 
 export interface LockRecord {
@@ -105,6 +127,7 @@ export interface ArchivedPicksWeek {
   balancesAfterWeek: Record<string, number>;
   lockRecordsAfterWeek: Record<string, LockRecord>;
   gradedAt: number;
+  adminEdits?: PicksAdminEdit[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

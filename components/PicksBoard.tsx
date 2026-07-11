@@ -9,12 +9,14 @@ import { formatLockRecord } from '@/lib/picks-grading';
 import { lockCountdown } from '@/lib/picks-utils';
 import type {
   ArchivedPicksWeek,
+  PicksAdminEdit,
   NFLGame,
   PicksSeasonState,
   PicksState,
   WeeklyPick,
   UserPicksSubmission,
 } from '@/lib/types';
+import type { WeekIssue } from '@/lib/picks-readiness';
 
 function gameTimeLabel(game: NFLGame): string {
   return new Date(game.commenceTime).toLocaleString('en-US', {
@@ -34,8 +36,8 @@ function formatTs(ts: number): string {
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
-async function apiFetchPicks(): Promise<PicksState | null> {
-  const res  = await fetch('/api/picks');
+async function apiFetchPicks(viewer: string): Promise<PicksState | null> {
+  const res  = await fetch(`/api/picks?viewer=${encodeURIComponent(viewer)}`);
   const data = await res.json();
   return data.state ?? null;
 }
@@ -51,6 +53,12 @@ async function apiFetchHistory(): Promise<{ seasons: string[]; history: Archived
   const res  = await fetch('/api/picks/history');
   const data = await res.json();
   return { seasons: data.seasons ?? [], history: data.history ?? [] };
+}
+
+async function apiFetchReadiness(adminName: string): Promise<{ issues: WeekIssue[]; edits: PicksAdminEdit[]; rolloverPending: boolean }> {
+  const res = await fetch(`/api/picks/readiness?adminName=${encodeURIComponent(adminName)}`);
+  if (!res.ok) return { issues: [], edits: [], rolloverPending: false };
+  return res.json();
 }
 
 async function apiSubmitPicks(
@@ -72,7 +80,7 @@ async function apiRefreshGames(week: number): Promise<PicksState> {
   const res  = await fetch('/api/picks/refresh', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ week }),
+    body:    JSON.stringify({ week, manual: true }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Refresh failed');
@@ -105,6 +113,15 @@ async function apiClearPicks(): Promise<PicksState | null> {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Clear failed');
   return data.state ?? null;
+}
+
+async function apiAdminEditPick(adminName: string, userName: string, gameId: string, selectedTeam: string, setAsLock: boolean, reason: string): Promise<void> {
+  const res = await fetch('/api/picks', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ adminName, userName, gameId, selectedTeam, setAsLock, reason }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? 'Manual edit failed');
 }
 
 async function apiSeedGames(): Promise<PicksState> {
@@ -143,6 +160,14 @@ export default function PicksBoard({
   const [confirmArchive,    setConfirmArchive]    = useState(false);
   const [nflWeek,           setNflWeek]           = useState(1);
   const [now,               setNow]               = useState(() => Date.now());
+  const [editUser,          setEditUser]          = useState<string>(LEAGUE_MEMBERS[0]);
+  const [editGameId,        setEditGameId]        = useState('');
+  const [editTeam,          setEditTeam]          = useState('');
+  const [editAsLock,        setEditAsLock]        = useState(false);
+  const [editReason,        setEditReason]        = useState('');
+  const [weekIssues,        setWeekIssues]        = useState<WeekIssue[]>([]);
+  const [adminEdits,        setAdminEdits]        = useState<PicksAdminEdit[]>([]);
+  const [rolloverPending,   setRolloverPending]   = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000);
@@ -153,7 +178,7 @@ export default function PicksBoard({
     setLoading(true);
     setError(null);
     try {
-      const state = await apiFetchPicks();
+      const state = await apiFetchPicks(myName);
       setPicksState(state);
       if (state?.weekNumber) setNflWeek(state.weekNumber);
 
@@ -164,6 +189,12 @@ export default function PicksBoard({
       ]);
       setSeasonState(season);
       setHistory(hist.history);
+      if (admin) {
+        const readiness = await apiFetchReadiness(myName);
+        setWeekIssues(readiness.issues);
+        setAdminEdits(readiness.edits);
+        setRolloverPending(readiness.rolloverPending);
+      }
 
       if (state) {
         const mine = state.submissions.find(s => s.userName === myName);
@@ -179,20 +210,14 @@ export default function PicksBoard({
     } finally {
       setLoading(false);
     }
-  }, [myName]);
+  }, [myName, admin]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleSubmit = async () => {
     if (!picksState) return;
-    const unlockedGames = picksState.games.filter(g => now < g.lockTime);
-    const missingPick   = unlockedGames.find(g => !draftPicks[g.id]);
-    if (missingPick) {
-      setError('Please pick a team for every unlocked game.');
-      return;
-    }
-    if (!lockOfWeekGameId || !draftPicks[lockOfWeekGameId]) {
-      setError('Select your Lock of the Week (🔒 on one game).');
+    if (!Object.keys(draftPicks).length) {
+      setError('Make at least one pick before saving.');
       return;
     }
 
@@ -312,12 +337,24 @@ export default function PicksBoard({
     }
   };
 
+  const handleManualEdit = async () => {
+    if (!editGameId || !editTeam) return;
+    setLoading(true); setError(null);
+    try {
+      await apiAdminEditPick(myName, editUser, editGameId, editTeam, editAsLock, editReason);
+      setSuccess(`Saved ${editUser}'s manual pick.`);
+      setEditAsLock(false);
+      setEditReason('');
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Manual edit failed');
+    } finally { setLoading(false); }
+  };
+
   const mySubmission: UserPicksSubmission | undefined =
     picksState?.submissions.find(s => s.userName === myName);
 
-  const unlockedGames     = picksState?.games.filter(g => now < g.lockTime) ?? [];
   const lockedGames       = picksState?.games.filter(g => now >= g.lockTime) ?? [];
-  const allUnlockedPicked = unlockedGames.every(g => draftPicks[g.id]);
   const allLocked         = picksState ? lockedGames.length === picksState.games.length : false;
   const completedGames    = picksState?.games.filter(g => g.completed).length ?? 0;
 
@@ -404,18 +441,22 @@ export default function PicksBoard({
                     <thead>
                       <tr className="text-left text-xs text-slate-500 border-b border-slate-100 dark:border-slate-800">
                         <th className="px-4 py-2">Player</th>
-                        <th className="px-4 py-2">Balance</th>
+                        <th className="px-4 py-2">Week</th>
+                        <th className="px-4 py-2">Season Total</th>
                         <th className="px-4 py-2">Lock W-L</th>
                       </tr>
                     </thead>
                     <tbody>
                       {[...LEAGUE_MEMBERS]
-                        .sort((a, b) => (seasonState.balances[b] ?? 0) - (seasonState.balances[a] ?? 0))
+                        .sort((a, b) => ((seasonState.balances[b] ?? 0) + (picksState?.lastWeeklyPoolDeltas?.[b] ?? 0)) - ((seasonState.balances[a] ?? 0) + (picksState?.lastWeeklyPoolDeltas?.[a] ?? 0)))
                         .map(name => (
                           <tr key={name} className={`border-b border-slate-50 dark:border-slate-800/50 ${name === myName ? 'bg-amber-50/50 dark:bg-amber-950/20' : ''}`}>
                             <td className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-100">{name}</td>
-                            <td className={`px-4 py-2 font-mono ${(seasonState.balances[name] ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                              {(seasonState.balances[name] ?? 0) >= 0 ? '+' : ''}{seasonState.balances[name] ?? 0}$
+                            <td className={`px-4 py-2 font-mono ${(picksState?.lastWeeklyPoolDeltas?.[name] ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              {(picksState?.lastWeeklyPoolDeltas?.[name] ?? 0) >= 0 ? '+' : ''}{picksState?.lastWeeklyPoolDeltas?.[name] ?? 0}$
+                            </td>
+                            <td className={`px-4 py-2 font-mono ${((seasonState.balances[name] ?? 0) + (picksState?.lastWeeklyPoolDeltas?.[name] ?? 0)) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              {((seasonState.balances[name] ?? 0) + (picksState?.lastWeeklyPoolDeltas?.[name] ?? 0)) >= 0 ? '+' : ''}{(seasonState.balances[name] ?? 0) + (picksState?.lastWeeklyPoolDeltas?.[name] ?? 0)}$
                             </td>
                             <td className="px-4 py-2 text-slate-500 text-xs">
                               {formatLockRecord(seasonState.lockRecords[name] ?? { wins: 0, losses: 0, pushes: 0 })}
@@ -449,6 +490,17 @@ export default function PicksBoard({
               {admin && (
                 <div className="w-full flex flex-col gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
                   <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Admin</p>
+                  {(rolloverPending || weekIssues.length > 0) && (
+                    <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3">
+                      <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                        {rolloverPending ? 'Wednesday rollover is waiting for corrections' : 'Week completion checklist'}
+                      </p>
+                      <ul className="mt-1 max-h-28 overflow-auto text-[11px] text-amber-700 dark:text-amber-400 list-disc pl-4">
+                        {weekIssues.slice(0, 12).map((issue, i) => <li key={`${issue.userName}-${issue.gameId}-${i}`}>{issue.message}</li>)}
+                        {weekIssues.length > 12 && <li>{weekIssues.length - 12} more issues</li>}
+                      </ul>
+                    </div>
+                  )}
                   <label className="flex items-center justify-between gap-2 text-xs text-slate-500">
                     <span>NFL week to load</span>
                     <select
@@ -475,6 +527,37 @@ export default function PicksBoard({
                       Test data
                     </button>
                   </div>
+                  {picksState && picksState.games.length > 0 && (
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
+                      <p className="text-xs font-bold text-slate-600 dark:text-slate-300">Manual pick override</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <select value={editUser} onChange={e => setEditUser(e.target.value)} className="rounded-lg border p-2 text-xs bg-white dark:bg-slate-900">
+                          {LEAGUE_MEMBERS.map(n => <option key={n}>{n}</option>)}
+                        </select>
+                        <select value={editGameId} onChange={e => { setEditGameId(e.target.value); setEditTeam(''); }} className="rounded-lg border p-2 text-xs bg-white dark:bg-slate-900">
+                          <option value="">Select game</option>
+                          {picksState.games.map(g => <option key={g.id} value={g.id}>{mascot(g.awayTeam)} @ {mascot(g.homeTeam)}</option>)}
+                        </select>
+                      </div>
+                      <select value={editTeam} onChange={e => setEditTeam(e.target.value)} disabled={!editGameId} className="w-full rounded-lg border p-2 text-xs bg-white dark:bg-slate-900 disabled:opacity-50">
+                        <option value="">Select pick</option>
+                        {picksState.games.filter(g => g.id === editGameId).flatMap(g => [g.awayTeam, g.homeTeam]).map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <label className="flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" checked={editAsLock} onChange={e => setEditAsLock(e.target.checked)} /> Set as Lock of the Week</label>
+                      <input value={editReason} onChange={e => setEditReason(e.target.value)} placeholder="Reason for correction (optional)" className="w-full rounded-lg border p-2 text-xs bg-white dark:bg-slate-900" />
+                      <button onClick={handleManualEdit} disabled={loading || !editGameId || !editTeam} className="w-full py-2 rounded-lg text-xs font-semibold bg-slate-800 text-white disabled:opacity-40">Save override</button>
+                      {adminEdits.length > 0 && (
+                        <details className="text-[11px] text-slate-500">
+                          <summary className="cursor-pointer font-semibold">Correction log ({adminEdits.length})</summary>
+                          <ul className="mt-1 space-y-1 max-h-28 overflow-auto">
+                            {[...adminEdits].reverse().slice(0, 20).map(edit => (
+                              <li key={edit.id}>{formatTs(edit.editedAt)} · {edit.timing?.replace('-', ' ') ?? 'timing unknown'} · {edit.userName}: {edit.previousTeam ?? 'missing'} → {edit.selectedTeam}{edit.setAsLock ? ' · Lock' : ''}{edit.reason ? ` · ${edit.reason}` : ''}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                  )}
                   {picksState && picksState.submissions.length > 0 && (
                     confirmArchive ? (
                       <div className="flex gap-2">
@@ -544,6 +627,11 @@ export default function PicksBoard({
                         )}
                       </div>
                       <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3">{matchupLine(game)}</p>
+                      {game.lineLockedAt && (
+                        <p className="text-[10px] text-amber-600 dark:text-amber-400 -mt-2 mb-3">
+                          Line locked after first pick
+                        </p>
+                      )}
 
                       <div className="grid grid-cols-2 gap-3">
                         {([game.awayTeam, game.homeTeam] as const).map(team => {
@@ -591,10 +679,10 @@ export default function PicksBoard({
               {!allLocked && (
                 <button
                   onClick={handleSubmit}
-                  disabled={!allUnlockedPicked || !lockOfWeekGameId || loading}
+                  disabled={!Object.keys(draftPicks).length || loading}
                   className="py-3 rounded-xl text-sm font-bold bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 disabled:opacity-40"
                 >
-                  {loading ? 'Submitting…' : mySubmission ? 'Update Picks' : 'Submit Picks'}
+                  {loading ? 'Saving…' : mySubmission ? 'Save Picks' : 'Save Picks'}
                 </button>
               )}
             </div>

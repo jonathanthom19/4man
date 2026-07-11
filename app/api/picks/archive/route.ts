@@ -5,6 +5,7 @@ import { getPicksState, setPicksState } from '@/lib/picks-store';
 import { applyWeeklySeasonUpdate } from '@/lib/picks-season-store';
 import { getPicksHistory } from '@/lib/picks-history-store';
 import type { ArchivedPicksWeek, PicksState } from '@/lib/types';
+import { getWeekIssues } from '@/lib/picks-readiness';
 
 export async function POST() {
   try {
@@ -14,6 +15,13 @@ export async function POST() {
     }
     if (state.submissions.length === 0) {
       return Response.json({ error: 'No submissions to archive' }, { status: 400 });
+    }
+    const issues = getWeekIssues(state);
+    if (issues.length) {
+      return Response.json({
+        error: 'Week cannot be archived until every game is final and every member has all picks plus a Lock of the Week.',
+        issues,
+      }, { status: 409 });
     }
 
     const graded = gradePicksState(state);
@@ -41,17 +49,20 @@ export async function POST() {
       balancesAfterWeek: { ...seasonState.balances },
       lockRecordsAfterWeek: { ...seasonState.lockRecords },
       gradedAt: graded.gradedAt ?? Date.now(),
+      adminEdits: graded.adminEdits,
     };
 
     await archivePicksWeek(archive);
 
     const cleared: PicksState = {
       weekLabel: graded.weekLabel,
+      weekNumber: graded.weekNumber,
       games: [],
       gamesRefreshedAt: Date.now(),
       submissions: [],
       season,
       sportKey: graded.sportKey,
+      awaitingWednesday: true,
     };
     await setPicksState(cleared);
 
