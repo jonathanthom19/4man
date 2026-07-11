@@ -235,7 +235,11 @@ export async function DELETE() {
   try {
     const state = await getPicksState();
     if (!state) return Response.json({ ok: true });
-    const next = { ...state, submissions: [] };
+    const next = {
+      ...state,
+      submissions: [],
+      games: state.games.map(game => ({ ...game, lineLockedAt: undefined })),
+    };
     await setPicksState(next);
     return Response.json({ ok: true, state: next });
   } catch (err: unknown) {

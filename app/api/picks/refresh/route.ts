@@ -103,14 +103,17 @@ export async function POST(req: Request) {
           }
         }
         const prior = priorById.get(g.id);
-        const spreadFrozen = prior?.lineLockedAt != null && !manual;
+        const hasLivePick = current?.submissions.some(sub =>
+          sub.picks.some(pick => pick.gameId === g.id),
+        ) ?? false;
+        const spreadFrozen = prior?.lineLockedAt != null && hasLivePick && !manual;
         return {
           id:           g.id,
           homeTeam:     g.home_team,
           awayTeam:     g.away_team,
           commenceTime: g.commence_time,
           homeSpread: spreadFrozen ? prior.homeSpread : homeSpread,
-          lineLockedAt: prior?.lineLockedAt,
+          lineLockedAt: hasLivePick ? prior?.lineLockedAt : undefined,
           lockTime:     computeLockTime(g.commence_time),
           homeScore:    prior?.homeScore,
           awayScore:    prior?.awayScore,
@@ -123,7 +126,11 @@ export async function POST(req: Request) {
     const fetchedIds = new Set(fetchedGames.map(g => g.id));
     const allGames = [
       ...fetchedGames,
-      ...(current?.games ?? []).filter(g => !fetchedIds.has(g.id)),
+      ...(current?.games ?? [])
+        .filter(g => !fetchedIds.has(g.id))
+        .map(g => current?.submissions.some(s => s.picks.some(p => p.gameId === g.id))
+          ? g
+          : { ...g, lineLockedAt: undefined }),
     ].sort((a, b) => new Date(a.commenceTime).getTime() - new Date(b.commenceTime).getTime());
 
     let games = allGames;
