@@ -36,6 +36,8 @@ export interface DraftState {
 
 // ─── NFL Picks ────────────────────────────────────────────────────────────────
 
+export type PickResult = 'win' | 'loss' | 'push' | 'pending';
+
 export interface NFLGame {
   id: string;
   homeTeam: string; // e.g. "Philadelphia Eagles"
@@ -43,11 +45,15 @@ export interface NFLGame {
   commenceTime: string; // ISO 8601
   homeSpread: number | null; // negative = home favored
   lockTime: number; // ms since epoch — picks for this game lock at this time
+  homeScore?: number | null;
+  awayScore?: number | null;
+  completed?: boolean;
 }
 
 export interface WeeklyPick {
   gameId: string;
   selectedTeam: string; // full team name
+  result?: PickResult;
 }
 
 export interface UserPicksSubmission {
@@ -55,13 +61,50 @@ export interface UserPicksSubmission {
   submittedAt: number;
   updatedAt: number;
   picks: WeeklyPick[];
+  /** One confidence pick per week (must be among `picks`). */
+  lockOfWeekGameId?: string;
 }
 
 export interface PicksState {
-  weekLabel: string; // e.g. "Sep 4–7, 2025"
+  weekLabel: string; // e.g. "NFL Week 1 · Sep 10–15, 2026"
+  /** NFL week number (1–18) when sport uses NFL week grouping. */
+  weekNumber?: number;
   games: NFLGame[];
   gamesRefreshedAt: number;
   submissions: UserPicksSubmission[];
+  /** Odds API sport key from last refresh (e.g. basketball_nba). */
+  sportKey?: string;
+  season?: string;
+  /** Pool $ deltas applied when this week was last graded (before archive). */
+  lastWeeklyPoolDeltas?: Record<string, number>;
+  gradedAt?: number;
+}
+
+export interface LockRecord {
+  wins: number;
+  losses: number;
+  pushes: number;
+}
+
+export interface PicksSeasonState {
+  season: string;
+  balances: Record<string, number>;
+  lockRecords: Record<string, LockRecord>;
+}
+
+export interface ArchivedPicksWeek {
+  id: string;
+  season: string;
+  weekLabel: string;
+  archivedAt: number;
+  games: NFLGame[];
+  submissions: UserPicksSubmission[];
+  sportKey?: string;
+  weeklyPoolDeltas: Record<string, number>;
+  /** Season balances after this week was applied. */
+  balancesAfterWeek: Record<string, number>;
+  lockRecordsAfterWeek: Record<string, LockRecord>;
+  gradedAt: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

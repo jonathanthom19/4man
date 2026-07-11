@@ -1,3 +1,4 @@
+import { canonicalMemberName, isLeagueMember } from '@/lib/league-members';
 import { getPicksState, setPicksState } from '@/lib/picks-store';
 import type { UserPicksSubmission, WeeklyPick } from '@/lib/types';
 
@@ -16,9 +17,20 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const { userName, picks } = await req.json() as { userName: string; picks: WeeklyPick[] };
+    const { userName, picks, lockOfWeekGameId } = await req.json() as {
+      userName: string;
+      picks: WeeklyPick[];
+      lockOfWeekGameId?: string;
+    };
     if (!userName || !Array.isArray(picks)) {
       return Response.json({ error: 'userName and picks are required' }, { status: 400 });
+    }
+    const canonical = canonicalMemberName(userName);
+    if (!canonical || !isLeagueMember(canonical)) {
+      return Response.json({ error: 'Invalid league member' }, { status: 400 });
+    }
+    if (lockOfWeekGameId && !picks.some(p => p.gameId === lockOfWeekGameId)) {
+      return Response.json({ error: 'Lock of the Week must be one of your picks' }, { status: 400 });
     }
 
     const state = await getPicksState();
@@ -50,15 +62,21 @@ export async function POST(req: Request) {
       return null;
     }).filter((p): p is WeeklyPick => p !== null);
 
+    const resolvedLock =
+      lockOfWeekGameId !== undefined
+        ? lockOfWeekGameId || undefined
+        : existing?.lockOfWeekGameId;
+
     const submission: UserPicksSubmission = {
-      userName,
+      userName: canonical,
       submittedAt: existing?.submittedAt ?? now,
       updatedAt:   now,
       picks:       mergedPicks,
+      ...(resolvedLock ? { lockOfWeekGameId: resolvedLock } : {}),
     };
 
     const submissions = [
-      ...state.submissions.filter(s => s.userName !== userName),
+      ...state.submissions.filter(s => s.userName !== canonical),
       submission,
     ].sort((a, b) => a.submittedAt - b.submittedAt);
 

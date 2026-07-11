@@ -9,7 +9,14 @@
  * first Sunday 1 PM game kicks off, but early-week games (Thursday, Friday, Saturday)
  * lock individually so you can't wait and pick based on other results.
  */
-export function computeLockTime(commenceTime: string): number {
+/** Lock at kickoff (used for non-NFL sports during testing / alternate leagues). */
+export function lockTimeAtKickoff(commenceTime: string): number {
+  return new Date(commenceTime).getTime();
+}
+
+export function computeLockTime(commenceTime: string, useNflSundayLockRules = true): number {
+  if (!useNflSundayLockRules) return lockTimeAtKickoff(commenceTime);
+
   const kickoff = new Date(commenceTime);
 
   // ── Step 1: find the Sunday of this NFL week (in Eastern time) ────────────

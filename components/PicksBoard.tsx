@@ -1,81 +1,20 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { espnTeamLogoUrl } from '@/lib/odds-sport';
+import { LEAGUE_MEMBERS, isLeagueAdmin } from '@/lib/league-members';
+import { matchupLine, mascot } from '@/lib/picks-display';
+import PicksWeekTable from './PicksWeekTable';
+import { formatLockRecord } from '@/lib/picks-grading';
 import { lockCountdown } from '@/lib/picks-utils';
-import type { PicksState, NFLGame, WeeklyPick, UserPicksSubmission } from '@/lib/types';
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const HARDCODED_ADMINS = new Set(['jon']);
-
-function isPicksAdmin(name: string): boolean {
-  return HARDCODED_ADMINS.has(name.toLowerCase());
-}
-
-/** "Dallas Cowboys" → "Cowboys" */
-function mascot(fullName: string): string {
-  const parts = fullName.trim().split(' ');
-  return parts[parts.length - 1];
-}
-
-/** "Dallas Cowboys" → "Dallas" / "Kansas City Chiefs" → "Kansas City" */
-function city(fullName: string): string {
-  const parts = fullName.trim().split(' ');
-  return parts.slice(0, -1).join(' ');
-}
-
-/**
- * "City at City (line)" where the line always appears next to the favored team.
- *   homeSpread = -8.5  →  "Dallas at Philadelphia (-8.5)"
- *   homeSpread = +3    →  "Kansas City (-3) at Los Angeles"
- *   homeSpread = 0     →  "Dallas at Philadelphia (PK)"
- */
-function matchupLine(game: NFLGame): string {
-  const away = city(game.awayTeam);
-  const home = city(game.homeTeam);
-  const hs   = game.homeSpread;
-  if (hs === null) return `${away} at ${home}`;
-  if (hs === 0)    return `${away} at ${home} (PK)`;
-  if (hs < 0)      return `${away} at ${home} (${hs})`;      // home favored
-  return `${away} (${-hs}) at ${home}`;                       // away favored
-}
-
-function gameColumnDay(game: NFLGame): string {
-  return new Date(game.commenceTime).toLocaleDateString('en-US', {
-    weekday: 'long', timeZone: 'America/New_York',
-  });
-}
-
-/** Full string used in exports / aria labels */
-function gameColumnHeader(game: NFLGame): string {
-  return `${gameColumnDay(game)} - ${matchupLine(game)}`;
-}
-
-// ─── ESPN team logo helpers ───────────────────────────────────────────────────
-
-const NFL_ESPN_ABBR: Record<string, string> = {
-  'Arizona Cardinals':    'ari', 'Atlanta Falcons':      'atl',
-  'Baltimore Ravens':     'bal', 'Buffalo Bills':        'buf',
-  'Carolina Panthers':    'car', 'Chicago Bears':        'chi',
-  'Cincinnati Bengals':   'cin', 'Cleveland Browns':     'cle',
-  'Dallas Cowboys':       'dal', 'Denver Broncos':       'den',
-  'Detroit Lions':        'det', 'Green Bay Packers':    'gb',
-  'Houston Texans':       'hou', 'Indianapolis Colts':   'ind',
-  'Jacksonville Jaguars': 'jax', 'Kansas City Chiefs':   'kc',
-  'Las Vegas Raiders':    'lv',  'Los Angeles Chargers': 'lac',
-  'Los Angeles Rams':     'lar', 'Miami Dolphins':       'mia',
-  'Minnesota Vikings':    'min', 'New England Patriots': 'ne',
-  'New Orleans Saints':   'no',  'New York Giants':      'nyg',
-  'New York Jets':        'nyj', 'Philadelphia Eagles':  'phi',
-  'Pittsburgh Steelers':  'pit', 'San Francisco 49ers':  'sf',
-  'Seattle Seahawks':     'sea', 'Tampa Bay Buccaneers': 'tb',
-  'Tennessee Titans':     'ten', 'Washington Commanders': 'wsh',
-};
-
-function espnLogoUrl(fullName: string): string {
-  const abbr = NFL_ESPN_ABBR[fullName];
-  return abbr ? `https://a.espncdn.com/i/teamlogos/nfl/500/${abbr}.png` : '';
-}
+import type {
+  ArchivedPicksWeek,
+  NFLGame,
+  PicksSeasonState,
+  PicksState,
+  WeeklyPick,
+  UserPicksSubmission,
+} from '@/lib/types';
 
 function gameTimeLabel(game: NFLGame): string {
   return new Date(game.commenceTime).toLocaleString('en-US', {
@@ -101,22 +40,64 @@ async function apiFetchPicks(): Promise<PicksState | null> {
   return data.state ?? null;
 }
 
-async function apiSubmitPicks(userName: string, picks: WeeklyPick[]): Promise<PicksState> {
+async function apiFetchSeason(season?: string): Promise<PicksSeasonState | null> {
+  const q = season ? `?season=${encodeURIComponent(season)}` : '';
+  const res  = await fetch(`/api/picks/season${q}`);
+  const data = await res.json();
+  return data.season ?? null;
+}
+
+async function apiFetchHistory(): Promise<{ seasons: string[]; history: ArchivedPicksWeek[] }> {
+  const res  = await fetch('/api/picks/history');
+  const data = await res.json();
+  return { seasons: data.seasons ?? [], history: data.history ?? [] };
+}
+
+async function apiSubmitPicks(
+  userName: string,
+  picks: WeeklyPick[],
+  lockOfWeekGameId?: string,
+): Promise<PicksState> {
   const res  = await fetch('/api/picks', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ userName, picks }),
+    body:    JSON.stringify({ userName, picks, lockOfWeekGameId }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Submit failed');
   return data.state;
 }
 
-async function apiRefreshGames(): Promise<PicksState> {
-  const res  = await fetch('/api/picks/refresh', { method: 'POST' });
+async function apiRefreshGames(week: number): Promise<PicksState> {
+  const res  = await fetch('/api/picks/refresh', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ week }),
+  });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Refresh failed');
   return data.state;
+}
+
+async function apiFetchScores(): Promise<PicksState> {
+  const res  = await fetch('/api/picks/scores', { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? 'Scores fetch failed');
+  return data.state;
+}
+
+async function apiGrade(): Promise<{ state: PicksState; season: PicksSeasonState }> {
+  const res  = await fetch('/api/picks/grade', { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? 'Grade failed');
+  return data;
+}
+
+async function apiArchive(): Promise<{ state: PicksState; archived: ArchivedPicksWeek }> {
+  const res  = await fetch('/api/picks/archive', { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? 'Archive failed');
+  return data;
 }
 
 async function apiClearPicks(): Promise<PicksState | null> {
@@ -135,7 +116,7 @@ async function apiSeedGames(): Promise<PicksState> {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Screen = 'home' | 'make' | 'view';
+type Screen = 'home' | 'make' | 'view' | 'history' | 'archiveView';
 
 // ─── PicksBoard ───────────────────────────────────────────────────────────────
 
@@ -146,24 +127,27 @@ export default function PicksBoard({
   dark:   boolean;
   onLeave: () => void;
 }) {
-  const admin = isPicksAdmin(myName);
+  const admin = isLeagueAdmin(myName);
 
-  const [screen,       setScreen]      = useState<Screen>('home');
-  const [picksState,   setPicksState]  = useState<PicksState | null>(null);
-  const [draftPicks,   setDraftPicks]  = useState<Record<string, string>>({}); // gameId → team
-  const [loading,      setLoading]     = useState(false);
-  const [error,        setError]       = useState<string | null>(null);
-  const [success,      setSuccess]     = useState<string | null>(null);
-  const [confirmClear, setConfirmClear] = useState(false);
-  const [now,          setNow]         = useState(() => Date.now());
+  const [screen,            setScreen]            = useState<Screen>('home');
+  const [picksState,        setPicksState]        = useState<PicksState | null>(null);
+  const [seasonState,       setSeasonState]       = useState<PicksSeasonState | null>(null);
+  const [history,           setHistory]           = useState<ArchivedPicksWeek[]>([]);
+  const [archivedWeek,      setArchivedWeek]      = useState<ArchivedPicksWeek | null>(null);
+  const [draftPicks,        setDraftPicks]        = useState<Record<string, string>>({});
+  const [lockOfWeekGameId,  setLockOfWeekGameId]  = useState<string | undefined>();
+  const [loading,           setLoading]           = useState(false);
+  const [error,             setError]             = useState<string | null>(null);
+  const [success,           setSuccess]           = useState<string | null>(null);
+  const [confirmClear,      setConfirmClear]      = useState(false);
+  const [confirmArchive,    setConfirmArchive]    = useState(false);
+  const [nflWeek,           setNflWeek]           = useState(1);
+  const [now,               setNow]               = useState(() => Date.now());
 
-  // Tick every 30 s to refresh lock countdowns
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
   }, []);
-
-  // ── Load on mount ──────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -171,13 +155,23 @@ export default function PicksBoard({
     try {
       const state = await apiFetchPicks();
       setPicksState(state);
-      // Pre-fill draft picks from any existing submission
+      if (state?.weekNumber) setNflWeek(state.weekNumber);
+
+      const seasonKey = state?.season;
+      const [season, hist] = await Promise.all([
+        apiFetchSeason(seasonKey),
+        apiFetchHistory(),
+      ]);
+      setSeasonState(season);
+      setHistory(hist.history);
+
       if (state) {
         const mine = state.submissions.find(s => s.userName === myName);
         if (mine) {
           const map: Record<string, string> = {};
           mine.picks.forEach(p => { map[p.gameId] = p.selectedTeam; });
           setDraftPicks(map);
+          setLockOfWeekGameId(mine.lockOfWeekGameId);
         }
       }
     } catch (e) {
@@ -189,28 +183,30 @@ export default function PicksBoard({
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Submit picks ──────────────────────────────────────────────────────────
-
   const handleSubmit = async () => {
     if (!picksState) return;
     const unlockedGames = picksState.games.filter(g => now < g.lockTime);
     const missingPick   = unlockedGames.find(g => !draftPicks[g.id]);
     if (missingPick) {
-      setError(`Please pick a team for every unlocked game.`);
+      setError('Please pick a team for every unlocked game.');
+      return;
+    }
+    if (!lockOfWeekGameId || !draftPicks[lockOfWeekGameId]) {
+      setError('Select your Lock of the Week (🔒 on one game).');
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
-      // Send all current draftPicks; server will preserve locked picks from existing submission
       const picks: WeeklyPick[] = Object.entries(draftPicks).map(([gameId, selectedTeam]) => ({
         gameId, selectedTeam,
       }));
-      const next = await apiSubmitPicks(myName, picks);
+      const next = await apiSubmitPicks(myName, picks, lockOfWeekGameId);
       setPicksState(next);
       setSuccess('Picks submitted!');
       setScreen('view');
+      await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Submit failed');
     } finally {
@@ -218,15 +214,14 @@ export default function PicksBoard({
     }
   };
 
-  // ── Admin: refresh games ──────────────────────────────────────────────────
-
   const handleRefresh = async () => {
     setLoading(true);
     setError(null);
     try {
-      const next = await apiRefreshGames();
+      const next = await apiRefreshGames(nflWeek);
       setPicksState(next);
-      setSuccess(`Games refreshed — ${next.games.length} game${next.games.length !== 1 ? 's' : ''} loaded.`);
+      if (next.weekNumber) setNflWeek(next.weekNumber);
+      setSuccess(`${next.weekLabel} — ${next.games.length} games with DraftKings spreads.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Refresh failed');
     } finally {
@@ -234,7 +229,55 @@ export default function PicksBoard({
     }
   };
 
-  // ── Admin: clear submissions ──────────────────────────────────────────────
+  const handleScores = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const next = await apiFetchScores();
+      setPicksState(next);
+      const n = next.games.filter(g => g.completed).length;
+      setSuccess(`Scores updated — ${n} / ${next.games.length} games final.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Scores failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGrade = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { state, season } = await apiGrade();
+      setPicksState(state);
+      setSeasonState(season);
+      setSuccess('Week graded — pool totals updated (not archived yet).');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Grade failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleArchive = async () => {
+    setConfirmArchive(false);
+    setLoading(true);
+    setError(null);
+    try {
+      const { state, archived } = await apiArchive();
+      setPicksState(state);
+      setDraftPicks({});
+      setLockOfWeekGameId(undefined);
+      setArchivedWeek(archived);
+      setSuccess(`Archived ${archived.weekLabel} — season ledger updated.`);
+      await load();
+      setScreen('archiveView');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Archive failed');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleClear = async () => {
     setConfirmClear(false);
@@ -244,15 +287,14 @@ export default function PicksBoard({
       const next = await apiClearPicks();
       setPicksState(next);
       setDraftPicks({});
-      setSuccess('All picks cleared for the new week.');
+      setLockOfWeekGameId(undefined);
+      setSuccess('Submissions cleared (games kept).');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Clear failed');
     } finally {
       setLoading(false);
     }
   };
-
-  // ── Admin: seed test games ────────────────────────────────────────────────
 
   const handleSeed = async () => {
     setLoading(true);
@@ -261,7 +303,8 @@ export default function PicksBoard({
       const next = await apiSeedGames();
       setPicksState(next);
       setDraftPicks({});
-      setSuccess('Test games loaded — 5 fake matchups ready.');
+      setLockOfWeekGameId(undefined);
+      setSuccess('Test games loaded.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Seed failed');
     } finally {
@@ -272,38 +315,37 @@ export default function PicksBoard({
   const mySubmission: UserPicksSubmission | undefined =
     picksState?.submissions.find(s => s.userName === myName);
 
-  const unlockedGames   = picksState?.games.filter(g => now < g.lockTime) ?? [];
-  const lockedGames     = picksState?.games.filter(g => now >= g.lockTime) ?? [];
+  const unlockedGames     = picksState?.games.filter(g => now < g.lockTime) ?? [];
+  const lockedGames       = picksState?.games.filter(g => now >= g.lockTime) ?? [];
   const allUnlockedPicked = unlockedGames.every(g => draftPicks[g.id]);
   const allLocked         = picksState ? lockedGames.length === picksState.games.length : false;
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Render
-  // ─────────────────────────────────────────────────────────────────────────
+  const completedGames    = picksState?.games.filter(g => g.completed).length ?? 0;
 
   return (
     <div className={dark ? 'dark' : ''}>
       <div className="min-h-screen flex flex-col bg-slate-100 dark:bg-slate-950">
 
-        {/* Nav */}
-        <nav className="shrink-0 bg-slate-900 flex items-center gap-3 px-4 py-2.5">
+        <nav className="shrink-0 bg-slate-900 flex items-center gap-3 px-4 py-2.5 flex-wrap">
           <button onClick={onLeave} className="text-slate-400 hover:text-white text-xs transition-colors">← Back</button>
           <div className="w-px h-4 bg-slate-700" />
-          <span className="font-bold text-sm text-white tracking-tight">4Man Drafting Portal</span>
-          <span className="text-slate-500 text-xs">·</span>
-          <span className="text-slate-400 text-xs">Weekly Picks</span>
+          <span className="font-bold text-sm text-white tracking-tight">Weekly Picks</span>
           {picksState && (
             <>
               <span className="text-slate-500 text-xs">·</span>
-              <span className="text-slate-300 text-xs font-medium">{picksState.weekLabel}</span>
+              <span className="text-slate-300 text-xs font-medium max-w-[200px] truncate">{picksState.weekLabel}</span>
             </>
           )}
           <div className="flex-1" />
+          <button
+            onClick={() => { setArchivedWeek(null); setScreen('history'); }}
+            className={`text-xs px-2 py-1 rounded ${screen === 'history' || screen === 'archiveView' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+          >
+            History
+          </button>
           <span className="text-xs text-slate-300 font-medium">{myName}</span>
           {admin && <span className="text-[10px] text-amber-500 bg-amber-950/40 px-1.5 py-0.5 rounded font-semibold">admin</span>}
         </nav>
 
-        {/* Error / Success banners */}
         {error && (
           <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 bg-red-600 text-white text-sm font-medium">
             <span className="flex-1">{error}</span>
@@ -317,49 +359,75 @@ export default function PicksBoard({
           </div>
         )}
 
-        {/* Body */}
         <div className="flex-1 flex flex-col">
 
           {/* ── Home ──────────────────────────────────────────────────────── */}
           {screen === 'home' && (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 gap-6">
-              {loading && (
-                <p className="text-slate-400 text-sm animate-pulse">Loading…</p>
-              )}
+            <div className="flex-1 flex flex-col items-center p-6 gap-6 max-w-lg mx-auto w-full">
+              {loading && <p className="text-slate-400 text-sm animate-pulse">Loading…</p>}
 
-              {!loading && !picksState && (
+              {!loading && !picksState?.games.length && (
                 <div className="text-center space-y-2">
                   <p className="text-slate-400 text-sm">No games loaded yet.</p>
-                  {admin && (
-                    <p className="text-slate-500 text-xs">Use the button below to fetch this week's DraftKings lines.</p>
-                  )}
+                  {admin && <p className="text-slate-500 text-xs">Refresh lines or load test data.</p>}
                 </div>
               )}
 
-              {!loading && picksState && (
-                <div className="text-center space-y-1">
-                  <h2 className="text-2xl font-black text-slate-900 dark:text-slate-100">{picksState.weekLabel}</h2>
+              {!loading && picksState && picksState.games.length > 0 && (
+                <div className="text-center space-y-1 w-full">
+                  <h2 className="text-xl font-black text-slate-900 dark:text-slate-100">{picksState.weekLabel}</h2>
                   <p className="text-slate-500 dark:text-slate-400 text-sm">
-                    {picksState.games.length} game{picksState.games.length !== 1 ? 's' : ''} ·{' '}
-                    {picksState.submissions.length} / 4 submitted
+                    {picksState.games.length} games · {picksState.submissions.length} / {LEAGUE_MEMBERS.length} submitted
+                    {completedGames > 0 && ` · ${completedGames} final`}
                   </p>
                   {mySubmission && (
                     <p className="text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
                       ✓ You submitted · {formatTs(mySubmission.updatedAt)}
                     </p>
                   )}
-                  {lockedGames.length > 0 && lockedGames.length < (picksState?.games.length ?? 0) && (
-                    <p className="text-amber-500 dark:text-amber-400 text-xs">
-                      ⚠ {lockedGames.length} game{lockedGames.length !== 1 ? 's' : ''} locked · {unlockedGames.length} still open
+                  {picksState.gradedAt && picksState.lastWeeklyPoolDeltas && (
+                    <p className="text-xs text-slate-500">
+                      Graded · your week:{' '}
+                      {(picksState.lastWeeklyPoolDeltas[myName] ?? 0) >= 0 ? '+' : ''}
+                      {picksState.lastWeeklyPoolDeltas[myName] ?? 0}$
                     </p>
-                  )}
-                  {allLocked && (
-                    <p className="text-red-500 text-xs font-semibold">All picks locked for this week.</p>
                   )}
                 </div>
               )}
 
-              <div className="flex flex-col sm:flex-row gap-3 w-full max-w-sm">
+              {seasonState && (
+                <div className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+                  <div className="px-4 py-2 bg-slate-800 text-white text-xs font-semibold">
+                    {seasonState.season} Season — Pool Standings
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-slate-500 border-b border-slate-100 dark:border-slate-800">
+                        <th className="px-4 py-2">Player</th>
+                        <th className="px-4 py-2">Balance</th>
+                        <th className="px-4 py-2">Lock W-L</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...LEAGUE_MEMBERS]
+                        .sort((a, b) => (seasonState.balances[b] ?? 0) - (seasonState.balances[a] ?? 0))
+                        .map(name => (
+                          <tr key={name} className={`border-b border-slate-50 dark:border-slate-800/50 ${name === myName ? 'bg-amber-50/50 dark:bg-amber-950/20' : ''}`}>
+                            <td className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-100">{name}</td>
+                            <td className={`px-4 py-2 font-mono ${(seasonState.balances[name] ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              {(seasonState.balances[name] ?? 0) >= 0 ? '+' : ''}{seasonState.balances[name] ?? 0}$
+                            </td>
+                            <td className="px-4 py-2 text-slate-500 text-xs">
+                              {formatLockRecord(seasonState.lockRecords[name] ?? { wins: 0, losses: 0, pushes: 0 })}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-3 w-full">
                 {picksState && picksState.games.length > 0 && (
                   <button
                     onClick={() => setScreen('make')}
@@ -373,37 +441,61 @@ export default function PicksBoard({
                     onClick={() => setScreen('view')}
                     className="flex-1 py-3 rounded-xl text-sm font-bold bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
                   >
-                    View All Picks
+                    View Picks
                   </button>
                 )}
               </div>
 
-              {/* Admin controls */}
               {admin && (
-                <div className="flex flex-col sm:flex-row gap-2 w-full max-w-sm pt-2 border-t border-slate-200 dark:border-slate-800">
-                  <button
-                    onClick={handleRefresh}
-                    disabled={loading}
-                    className="flex-1 py-2 rounded-lg text-xs font-semibold text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors disabled:opacity-50"
-                  >
-                    ↻ Refresh DraftKings Lines
-                  </button>
-                  <button
-                    onClick={handleSeed}
-                    disabled={loading}
-                    className="flex-1 py-2 rounded-lg text-xs font-semibold text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50"
-                  >
-                    🧪 Load Test Data
-                  </button>
+                <div className="w-full flex flex-col gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Admin</p>
+                  <label className="flex items-center justify-between gap-2 text-xs text-slate-500">
+                    <span>NFL week to load</span>
+                    <select
+                      value={nflWeek}
+                      onChange={e => setNflWeek(Number(e.target.value))}
+                      className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-slate-800 dark:text-slate-100 font-semibold"
+                    >
+                      {Array.from({ length: 18 }, (_, i) => i + 1).map(w => (
+                        <option key={w} value={w}>Week {w}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={handleRefresh} disabled={loading} className="py-2 rounded-lg text-xs font-semibold text-amber-600 border border-amber-200 dark:border-amber-800 disabled:opacity-50">
+                      ↻ Lines
+                    </button>
+                    <button onClick={handleScores} disabled={loading} className="py-2 rounded-lg text-xs font-semibold text-blue-600 border border-blue-200 dark:border-blue-800 disabled:opacity-50">
+                      Scores
+                    </button>
+                    <button onClick={handleGrade} disabled={loading} className="py-2 rounded-lg text-xs font-semibold text-violet-600 border border-violet-200 dark:border-violet-800 disabled:opacity-50">
+                      Grade
+                    </button>
+                    <button onClick={handleSeed} disabled={loading} className="py-2 rounded-lg text-xs font-semibold text-slate-500 border border-slate-200 dark:border-slate-700 disabled:opacity-50">
+                      Test data
+                    </button>
+                  </div>
                   {picksState && picksState.submissions.length > 0 && (
-                    confirmClear ? (
-                      <div className="flex gap-2 flex-1">
-                        <button onClick={handleClear} className="flex-1 py-2 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-colors">Confirm Clear</button>
-                        <button onClick={() => setConfirmClear(false)} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors">Cancel</button>
+                    confirmArchive ? (
+                      <div className="flex gap-2">
+                        <button onClick={handleArchive} className="flex-1 py-2 rounded-lg text-xs font-bold text-white bg-violet-600">Archive week</button>
+                        <button onClick={() => setConfirmArchive(false)} className="flex-1 py-2 rounded-lg text-xs bg-slate-200 dark:bg-slate-700">Cancel</button>
                       </div>
                     ) : (
-                      <button onClick={() => setConfirmClear(true)} className="flex-1 py-2 rounded-lg text-xs font-semibold text-red-500 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors">
-                        Clear All Picks
+                      <button onClick={() => setConfirmArchive(true)} className="py-2 rounded-lg text-xs font-semibold text-violet-600 border border-violet-300 dark:border-violet-800 w-full">
+                        Archive week → next
+                      </button>
+                    )
+                  )}
+                  {picksState && picksState.submissions.length > 0 && (
+                    confirmClear ? (
+                      <div className="flex gap-2">
+                        <button onClick={handleClear} className="flex-1 py-2 rounded-lg text-xs font-bold text-white bg-red-600">Clear picks</button>
+                        <button onClick={() => setConfirmClear(false)} className="flex-1 py-2 rounded-lg text-xs bg-slate-200 dark:bg-slate-700">Cancel</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setConfirmClear(true)} className="py-2 rounded-lg text-xs font-semibold text-red-500 border border-red-200 dark:border-red-900 w-full">
+                        Clear submissions only
                       </button>
                     )
                   )}
@@ -416,115 +508,81 @@ export default function PicksBoard({
           {screen === 'make' && picksState && (
             <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full p-4 gap-4">
               <div className="flex items-center gap-3">
-                <button onClick={() => setScreen('home')} className="text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 text-sm transition-colors">← Back</button>
+                <button onClick={() => setScreen('home')} className="text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 text-sm">← Back</button>
                 <h2 className="font-bold text-slate-900 dark:text-slate-100 text-base flex-1">
-                  {mySubmission ? 'Edit Your Picks' : 'Make Your Picks'}
+                  {mySubmission ? 'Edit Picks' : 'Make Picks'}
                 </h2>
-                <span className="text-xs text-slate-400">
-                  {Object.keys(draftPicks).length} / {picksState.games.length} picked
-                </span>
               </div>
+
+              <p className="text-xs text-slate-500 -mt-2">
+                Tap 🔒 Lock of the Week on one game after picking a side.
+              </p>
 
               {allLocked && (
                 <div className="bg-red-950/30 border border-red-800/40 rounded-xl px-4 py-3 text-center">
-                  <p className="text-red-400 text-sm font-semibold">All picks are locked for this week.</p>
+                  <p className="text-red-400 text-sm font-semibold">All picks locked for this week.</p>
                 </div>
               )}
 
               <div className="space-y-3">
                 {picksState.games.map(game => {
-                  const selected   = draftPicks[game.id];
-                  const locked     = now >= game.lockTime;
-                  const countdown  = lockCountdown(game.lockTime, now);
+                  const selected  = draftPicks[game.id];
+                  const locked    = now >= game.lockTime;
+                  const isLock    = lockOfWeekGameId === game.id;
 
                   return (
                     <div
                       key={game.id}
-                      className={`rounded-2xl border p-4 transition-colors ${
-                        locked
-                          ? 'bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800/60 opacity-70'
-                          : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'
-                      }`}
+                      className={`rounded-2xl border p-4 ${locked ? 'opacity-70 bg-slate-50 dark:bg-slate-900/40' : 'bg-white dark:bg-slate-900'}`}
                     >
-                      {/* Game header */}
                       <div className="flex items-start justify-between mb-1">
-                        <p className="text-xs text-slate-400 dark:text-slate-500">{gameTimeLabel(game)}</p>
+                        <p className="text-xs text-slate-400">{gameTimeLabel(game)}</p>
                         {locked ? (
-                          <span className="text-[10px] font-bold text-red-500 bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded-full shrink-0">
-                            LOCKED
-                          </span>
+                          <span className="text-[10px] font-bold text-red-500 border border-red-500/20 px-2 py-0.5 rounded-full">LOCKED</span>
                         ) : (
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${
-                            game.lockTime - now < 3_600_000
-                              ? 'text-amber-500 bg-amber-500/10 border border-amber-500/20'
-                              : 'text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700'
-                          }`}>
-                            Locks in {countdown}
-                          </span>
+                          <span className="text-[10px] text-slate-400 px-2 py-0.5 rounded-full border">Locks in {lockCountdown(game.lockTime, now)}</span>
                         )}
                       </div>
+                      <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3">{matchupLine(game)}</p>
 
-                      {/* Matchup line with spread next to favored team */}
-                      <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-4">
-                        {matchupLine(game)}
-                      </p>
-
-                      {/* Logo pick buttons */}
                       <div className="grid grid-cols-2 gap-3">
                         {([game.awayTeam, game.homeTeam] as const).map(team => {
                           const isSelected = selected === team;
-                          const logoUrl    = espnLogoUrl(team);
+                          const logoUrl = espnTeamLogoUrl(team, picksState.sportKey);
                           return (
                             <button
                               key={team}
                               onClick={() => !locked && setDraftPicks(prev => ({ ...prev, [game.id]: team }))}
                               disabled={locked}
-                              className={`relative flex flex-col items-center gap-2 rounded-xl py-4 px-2 transition-all disabled:cursor-not-allowed ${
-                                isSelected
-                                  ? locked
-                                    ? 'bg-slate-700/60 ring-2 ring-slate-500'
-                                    : 'bg-slate-900 dark:bg-white ring-2 ring-slate-900 dark:ring-white shadow-lg scale-[1.03]'
-                                  : locked
-                                    ? 'bg-slate-100 dark:bg-slate-800/40'
-                                    : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700'
+                              className={`flex flex-col items-center gap-2 rounded-xl py-4 px-2 disabled:cursor-not-allowed ${
+                                isSelected ? 'bg-slate-900 dark:bg-white ring-2 ring-slate-900 dark:ring-white' : 'bg-slate-50 dark:bg-slate-800'
                               }`}
                             >
-                              {/* Selected checkmark */}
-                              {isSelected && !locked && (
-                                <span className="absolute top-2 right-2 text-[10px] text-white dark:text-slate-900 font-black">✓</span>
-                              )}
-                              {/* Logo */}
                               {logoUrl ? (
                                 // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={logoUrl}
-                                  alt={team}
-                                  width={64}
-                                  height={64}
-                                  className={`w-16 h-16 object-contain transition-all ${
-                                    locked && !isSelected ? 'opacity-30 grayscale' : isSelected && !locked ? 'brightness-0 invert dark:brightness-100 dark:invert-0' : ''
-                                  }`}
-                                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                                />
+                                <img src={logoUrl} alt={team} width={64} height={64} className="w-16 h-16 object-contain" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
                               ) : (
-                                <span className={`text-2xl font-black ${isSelected && !locked ? 'text-white dark:text-slate-900' : 'text-slate-400'}`}>
-                                  {mascot(team).slice(0, 3).toUpperCase()}
-                                </span>
+                                <span className="text-2xl font-black text-slate-400">{mascot(team).slice(0, 3)}</span>
                               )}
-                              {/* Team name */}
-                              <span className={`text-xs font-semibold leading-tight text-center ${
-                                isSelected && !locked
-                                  ? 'text-white dark:text-slate-900'
-                                  : locked
-                                    ? 'text-slate-400 dark:text-slate-600'
-                                    : 'text-slate-600 dark:text-slate-300'
-                              }`}>
-                                {mascot(team)}
-                              </span>
+                              <span className="text-xs font-semibold">{mascot(team)}</span>
                             </button>
                           );
                         })}
                       </div>
+
+                      {selected && !locked && (
+                        <button
+                          type="button"
+                          onClick={() => setLockOfWeekGameId(game.id)}
+                          className={`mt-3 w-full py-2 rounded-lg text-xs font-bold border transition-colors ${
+                            isLock
+                              ? 'bg-amber-500 text-white border-amber-600'
+                              : 'bg-transparent text-amber-600 border-amber-300 dark:border-amber-800'
+                          }`}
+                        >
+                          {isLock ? '🔒 Lock of the Week' : 'Set as Lock of the Week'}
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -533,88 +591,101 @@ export default function PicksBoard({
               {!allLocked && (
                 <button
                   onClick={handleSubmit}
-                  disabled={!allUnlockedPicked || loading}
-                  className="py-3 rounded-xl text-sm font-bold bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  disabled={!allUnlockedPicked || !lockOfWeekGameId || loading}
+                  className="py-3 rounded-xl text-sm font-bold bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 disabled:opacity-40"
                 >
-                  {loading
-                    ? 'Submitting…'
-                    : mySubmission
-                      ? `Update ${unlockedGames.length} Unlocked Pick${unlockedGames.length !== 1 ? 's' : ''}`
-                      : 'Submit Picks'}
+                  {loading ? 'Submitting…' : mySubmission ? 'Update Picks' : 'Submit Picks'}
                 </button>
               )}
             </div>
           )}
 
-          {/* ── View All Picks ────────────────────────────────────────────── */}
+          {/* ── View (current week) ───────────────────────────────────────── */}
           {screen === 'view' && picksState && (
-            <div className="flex-1 flex flex-col">
+            <div className="flex-1 flex flex-col min-h-0">
               <div className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-                <button onClick={() => setScreen('home')} className="text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 text-sm transition-colors">← Back</button>
-                <h2 className="font-bold text-slate-900 dark:text-slate-100 text-base flex-1">All Picks — {picksState.weekLabel}</h2>
-                <span className="text-xs text-slate-400">{picksState.submissions.length} submitted</span>
+                <button onClick={() => setScreen('home')} className="text-slate-500 text-sm">← Back</button>
+                <h2 className="font-bold text-slate-900 dark:text-slate-100 text-base flex-1 truncate">
+                  {picksState.weekLabel}
+                </h2>
+              </div>
+              <PicksWeekTable
+                weekLabel={picksState.weekLabel}
+                games={picksState.games}
+                submissions={picksState.submissions}
+                myName={myName}
+                poolDeltas={picksState.lastWeeklyPoolDeltas}
+                showPool={Boolean(picksState.gradedAt)}
+                footer={
+                  !picksState.gradedAt && admin ? (
+                    <p className="px-4 py-2 text-xs text-slate-500 text-center border-t border-slate-200 dark:border-slate-800">
+                      Admin: fetch Scores, then Grade to show results.
+                    </p>
+                  ) : undefined
+                }
+              />
+            </div>
+          )}
+
+          {/* ── Archived week view ────────────────────────────────────────── */}
+          {screen === 'archiveView' && archivedWeek && (
+            <div className="flex-1 flex flex-col min-h-0">
+              <div className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+                <button
+                  onClick={() => { setArchivedWeek(null); setScreen('history'); }}
+                  className="text-slate-500 text-sm"
+                >
+                  ← History
+                </button>
+                <h2 className="font-bold text-slate-900 dark:text-slate-100 text-base flex-1 truncate">
+                  {archivedWeek.weekLabel}
+                </h2>
+                <span className="text-[10px] text-slate-400">{archivedWeek.season}</span>
+              </div>
+              <PicksWeekTable
+                weekLabel={archivedWeek.weekLabel}
+                games={archivedWeek.games}
+                submissions={archivedWeek.submissions}
+                myName={myName}
+                poolDeltas={archivedWeek.weeklyPoolDeltas}
+                showPool
+                balancesAfterWeek={archivedWeek.balancesAfterWeek}
+              />
+            </div>
+          )}
+
+          {/* ── History ───────────────────────────────────────────────────── */}
+          {screen === 'history' && (
+            <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full p-4 gap-4">
+              <div className="flex items-center gap-3">
+                <button onClick={() => setScreen('home')} className="text-slate-500 text-sm">← Home</button>
+                <h2 className="font-bold text-slate-900 dark:text-slate-100">Season archive</h2>
               </div>
 
-              {picksState.submissions.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <p className="text-slate-400 dark:text-slate-600 text-sm">No picks submitted yet.</p>
-                </div>
+              {history.length === 0 ? (
+                <p className="text-slate-400 text-sm text-center py-8">No archived weeks yet.</p>
               ) : (
-                <div className="flex-1 overflow-auto">
-                  <table className="min-w-max text-sm border-collapse">
-                    <thead>
-                      <tr className="bg-slate-800 text-white text-left sticky top-0 z-10">
-                        <th className="px-4 py-3 font-semibold text-xs whitespace-nowrap sticky left-0 bg-slate-800 z-20">Timestamp</th>
-                        <th className="px-4 py-3 font-semibold text-xs whitespace-nowrap sticky left-28 bg-slate-800 z-20 border-r border-slate-700">Name</th>
-                        {picksState.games.map(game => (
-                          <th
-                            key={game.id}
-                            aria-label={gameColumnHeader(game)}
-                            className="px-4 py-3 text-left align-bottom"
-                            style={{ minWidth: '160px' }}
-                          >
-                            <span className="block text-[10px] font-normal text-slate-400 whitespace-nowrap mb-0.5">
-                              {gameColumnDay(game)}
-                            </span>
-                            <span className="block text-xs font-semibold text-white whitespace-nowrap">
-                              {matchupLine(game)}
-                            </span>
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {picksState.submissions.map((sub, i) => {
-                        const pickMap: Record<string, string> = {};
-                        sub.picks.forEach(p => { pickMap[p.gameId] = p.selectedTeam; });
-                        return (
-                          <tr
-                            key={sub.userName}
-                            className={`border-b border-slate-100 dark:border-slate-800 ${
-                              i % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-900/50'
-                            } ${sub.userName === myName ? 'ring-1 ring-inset ring-amber-400' : ''}`}
-                          >
-                            <td className="px-4 py-2.5 text-xs text-slate-400 whitespace-nowrap sticky left-0 bg-inherit">
-                              {formatTs(sub.submittedAt)}
-                            </td>
-                            <td className="px-4 py-2.5 font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap sticky left-28 bg-inherit border-r border-slate-100 dark:border-slate-800">
-                              {sub.userName}
-                              {sub.userName === myName && <span className="ml-1 text-[10px] text-amber-500">★</span>}
-                            </td>
-                            {picksState.games.map(game => {
-                              const picked = pickMap[game.id];
-                              return (
-                                <td key={game.id} className="px-4 py-2.5 whitespace-nowrap text-slate-700 dark:text-slate-300">
-                                  {picked ? mascot(picked) : <span className="text-slate-300 dark:text-slate-600">–</span>}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <ul className="space-y-2">
+                  {history.map(week => (
+                    <li key={week.id}>
+                      <button
+                        type="button"
+                        onClick={() => { setArchivedWeek(week); setScreen('archiveView'); }}
+                        className="w-full flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/80 text-left transition-colors"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">
+                            {week.weekLabel}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {week.season} · archived {formatTs(week.archivedAt)}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-xs font-semibold text-slate-500">View →</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           )}

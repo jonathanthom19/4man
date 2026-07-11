@@ -1,11 +1,21 @@
 /**
- * Fetches upcoming NFL games with DraftKings spreads from The Odds API
+ * Fetches upcoming games with DraftKings spreads from The Odds API
  * and stores them in KV, preserving existing submissions.
  *
  * Requires env var:  ODDS_API_KEY
+ * Optional:         ODDS_SPORT_KEY (default americanfootball_nfl; use basketball_nba to test off-season)
+ * Body (optional):   { "week": 1 } — NFL week to load (default 1)
  * Get a free key (500 req/month) at https://the-odds-api.com
  */
 
+import { getOddsSportConfig } from '@/lib/odds-sport';
+import {
+  detectCurrentNflWeek,
+  filterGamesForNflWeek,
+  formatNflWeekLabel,
+  nflWeekCount,
+} from '@/lib/nfl-week';
+import { seasonFromGames } from '@/lib/picks-grading';
 import { getPicksState, setPicksState } from '@/lib/picks-store';
 import { computeLockTime } from '@/lib/picks-utils';
 import type { NFLGame, PicksState } from '@/lib/types';
@@ -21,26 +31,43 @@ interface OddsGame    {
   bookmakers: OddsBook[];
 }
 
-function weekLabel(games: NFLGame[]): string {
-  if (!games.length) return 'NFL Picks';
+function weekLabel(games: NFLGame[], sportLabel: string): string {
+  if (!games.length) return `${sportLabel} Picks`;
   const times = games.map(g => new Date(g.commenceTime).getTime());
   const min = new Date(Math.min(...times));
   const max = new Date(Math.max(...times));
   const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
   const year = min.getFullYear();
-  return min.getMonth() === max.getMonth()
+  const range = min.getMonth() === max.getMonth()
     ? `${fmt(min)}–${max.getDate()}, ${year}`
     : `${fmt(min)} – ${fmt(max)}, ${year}`;
+  return `${sportLabel} Picks · ${range}`;
 }
 
-export async function POST() {
+function parseWeek(body: unknown): number | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const week = (body as { week?: unknown }).week;
+  if (typeof week !== 'number' || !Number.isInteger(week) || week < 1 || week > 22) return undefined;
+  return week;
+}
+
+export async function POST(req: Request) {
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) {
     return Response.json({ error: 'ODDS_API_KEY environment variable is not set' }, { status: 500 });
   }
 
+  let requestedWeek: number | undefined;
   try {
-    const url = new URL('https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/');
+    const body = await req.json();
+    requestedWeek = parseWeek(body);
+  } catch {
+    requestedWeek = undefined;
+  }
+
+  try {
+    const sport = getOddsSportConfig();
+    const url = new URL(`https://api.the-odds-api.com/v4/sports/${sport.key}/odds/`);
     url.searchParams.set('apiKey',      apiKey);
     url.searchParams.set('regions',     'us');
     url.searchParams.set('markets',     'spreads');
@@ -55,7 +82,10 @@ export async function POST() {
 
     const data = await res.json() as OddsGame[];
 
-    const games: NFLGame[] = data
+    const current = await getPicksState();
+    const priorById = new Map((current?.games ?? []).map(g => [g.id, g]));
+
+    const allGames: NFLGame[] = data
       .map((g): NFLGame => {
         let homeSpread: number | null = null;
         const book = g.bookmakers.find(b => b.key === 'draftkings');
@@ -66,27 +96,62 @@ export async function POST() {
             if (outcome) homeSpread = outcome.point;
           }
         }
+        const prior = priorById.get(g.id);
         return {
           id:           g.id,
           homeTeam:     g.home_team,
           awayTeam:     g.away_team,
           commenceTime: g.commence_time,
           homeSpread,
-          lockTime:     computeLockTime(g.commence_time),
+          lockTime:     computeLockTime(g.commence_time, sport.useNflSundayLockRules),
+          homeScore:    prior?.homeScore,
+          awayScore:    prior?.awayScore,
+          completed:    prior?.completed,
         };
       })
       .sort((a, b) => new Date(a.commenceTime).getTime() - new Date(b.commenceTime).getTime());
 
-    const current = await getPicksState();
+    let games = allGames;
+    let weekNumber: number | undefined;
+
+    if (sport.useNflSundayLockRules) {
+      const availableWeeks = nflWeekCount(allGames);
+      weekNumber = requestedWeek
+        ?? current?.weekNumber
+        ?? detectCurrentNflWeek(allGames);
+      games = filterGamesForNflWeek(allGames, weekNumber);
+
+      if (!games.length) {
+        return Response.json({
+          error: `No games for NFL week ${weekNumber} (${availableWeeks} week${availableWeeks === 1 ? '' : 's'} available from Odds API)`,
+        }, { status: 400 });
+      }
+    }
+
+    const label = weekNumber
+      ? formatNflWeekLabel(games, sport.label, weekNumber)
+      : weekLabel(games, sport.label);
+
     const next: PicksState = {
-      weekLabel:        weekLabel(games),
+      weekLabel:        label,
+      weekNumber,
       games,
       gamesRefreshedAt: Date.now(),
       submissions:      current?.submissions ?? [],
+      sportKey:         sport.key,
+      season:           current?.season ?? seasonFromGames(games),
+      gradedAt:         current?.gradedAt,
+      lastWeeklyPoolDeltas: current?.lastWeeklyPoolDeltas,
     };
 
     await setPicksState(next);
-    return Response.json({ state: next, remaining: res.headers.get('x-requests-remaining') });
+    return Response.json({
+      state: next,
+      remaining: res.headers.get('x-requests-remaining'),
+      sport: sport.label,
+      weekNumber,
+      totalGamesFromApi: allGames.length,
+    });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }

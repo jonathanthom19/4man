@@ -3,17 +3,21 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import PicksBoard from './PicksBoard';
+import {
+  LEAGUE_MEMBERS,
+  LEAGUE_MEMBER_SET,
+  LEAGUE_ADMINS,
+  canonicalMemberName,
+} from '@/lib/league-members';
 import type { Player, DraftedPlayer, DraftState, ArchivedDraft } from '@/lib/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── League roster — edit here to add/remove people ───────────────────────────
-// Names are canonical (display) form. Comparison is always case-insensitive.
-const HARDCODED_MANAGERS: string[] = ['Charlie', 'Jon', 'Steven', 'Avery'];
-const HARDCODED_MEMBERS  = new Set(HARDCODED_MANAGERS.map(n => n.toLowerCase()));
-const HARDCODED_ADMINS   = new Set(['jon']); // always have admin powers
+const HARDCODED_MANAGERS: string[] = [...LEAGUE_MEMBERS];
+const HARDCODED_MEMBERS  = LEAGUE_MEMBER_SET;
+const HARDCODED_ADMINS   = LEAGUE_ADMINS;
 
 const COLORS = [
   { header: 'bg-rose-500',    cell: 'bg-rose-50    dark:bg-rose-950/40',    border: 'border-rose-300',    text: 'text-rose-500',    },
@@ -1281,7 +1285,7 @@ export default function DraftBoard() {
     if (savedDark !== null) setDark(savedDark === 'true');
     const savedName = localStorage.getItem(NAME_KEY);
     if (savedName) {
-      const canonical = HARDCODED_MANAGERS.find(m => m.toLowerCase() === savedName.toLowerCase()) ?? savedName;
+      const canonical = canonicalMemberName(savedName) ?? savedName;
       setMyName(canonical);
       if (canonical !== savedName) localStorage.setItem(NAME_KEY, canonical);
     }
@@ -1422,7 +1426,7 @@ export default function DraftBoard() {
       // Normalize to canonical casing so name matches draftState.managers exactly
       // (e.g. "charlie" → "Charlie"). Falls back to typed name for custom admin.
       const canonicalName =
-        HARDCODED_MANAGERS.find(m => m.toLowerCase() === nameLower) ?? name;
+        canonicalMemberName(name) ?? name;
 
       setLocalMode(lm);
       setMyName(canonicalName);
