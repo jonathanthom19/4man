@@ -655,23 +655,21 @@ export default function PicksBoard({
                           <span className="text-[10px] text-slate-400 px-2 py-0.5 rounded-full border">Locks in {lockCountdown(game.lockTime, now)}</span>
                         )}
                       </div>
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{matchupLine(game)}</p>
+                      <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{matchupLine(game)}</p>
+                      <div className="flex items-center gap-3 mt-1 mb-3">
                         <button
                           type="button"
                           onClick={() => setLineHistoryGame(game)}
-                          className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-full px-2 py-0.5 transition-colors"
+                          className="text-[11px] font-semibold text-sky-600 dark:text-sky-400 hover:underline"
                         >
-                          Line history
+                          Line history →
                         </button>
+                        {game.lineLockedAt && (
+                          <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                            Line locked after first pick
+                          </span>
+                        )}
                       </div>
-                      {game.lineLockedAt ? (
-                        <p className="text-[10px] text-amber-600 dark:text-amber-400 mb-3">
-                          Line locked after first pick
-                        </p>
-                      ) : (
-                        <div className="mb-3" />
-                      )}
 
                       <div className="grid grid-cols-2 gap-3">
                         {([game.awayTeam, game.homeTeam] as const).map(team => {
