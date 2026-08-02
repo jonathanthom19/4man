@@ -1347,9 +1347,8 @@ function CompletedScreen({ names, picks, rounds, onReset }: {
 // Section selection screen (after login, before draft or picks)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function SectionScreen({ myName, hasDraft, loading, error, onDraft, onPicks, onSwitch }: {
+function SectionScreen({ myName, loading, error, onDraft, onPicks, onSwitch }: {
   myName:   string;
-  hasDraft: boolean;
   loading:  boolean;
   error:    string | null;
   onDraft:  () => void;
@@ -1378,15 +1377,8 @@ function SectionScreen({ myName, hasDraft, loading, error, onDraft, onPicks, onS
             <span className="text-3xl">🏈</span>
             <div>
               <p className="font-bold text-white text-base">Draft Board</p>
-              <p className="text-slate-500 text-xs mt-0.5">
-                {hasDraft ? 'Draft in progress' : 'League draft setup'}
-              </p>
+              <p className="text-slate-500 text-xs mt-0.5">Annual fantasy draft</p>
             </div>
-            {hasDraft && (
-              <span className="self-start text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-semibold">
-                LIVE
-              </span>
-            )}
           </button>
 
           <button
@@ -1863,7 +1855,6 @@ export default function DraftBoard() {
       {screen === 'section' && myName && (
         <SectionScreen
           myName={myName}
-          hasDraft={Boolean(draftState)}
           loading={loading}
           error={error}
           onDraft={handleEnterDraft}
