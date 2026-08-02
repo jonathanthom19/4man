@@ -16,6 +16,7 @@ import {
   nflWeekCount,
 } from '@/lib/nfl-week';
 import { seasonFromGames } from '@/lib/picks-grading';
+import { appendLineHistory } from '@/lib/picks-line-history';
 import { getPicksState, setPicksState } from '@/lib/picks-store';
 import { computeLockTime } from '@/lib/picks-utils';
 import type { NFLGame, PicksState } from '@/lib/types';
@@ -107,12 +108,17 @@ export async function POST(req: Request) {
           sub.picks.some(pick => pick.gameId === g.id),
         ) ?? false;
         const spreadFrozen = prior?.lineLockedAt != null && hasLivePick && !manual;
+        const resolvedSpread = spreadFrozen ? (prior?.homeSpread ?? homeSpread) : homeSpread;
+        const refreshedAt = Date.now();
         return {
           id:           g.id,
           homeTeam:     g.home_team,
           awayTeam:     g.away_team,
           commenceTime: g.commence_time,
-          homeSpread: spreadFrozen ? prior.homeSpread : homeSpread,
+          homeSpread: resolvedSpread,
+          lineHistory: spreadFrozen
+            ? (prior?.lineHistory ?? appendLineHistory(prior, resolvedSpread, 'open', refreshedAt))
+            : appendLineHistory(prior, resolvedSpread, prior ? 'refresh' : 'open', refreshedAt),
           lineLockedAt: hasLivePick ? prior?.lineLockedAt : undefined,
           lockTime:     computeLockTime(g.commence_time),
           homeScore:    prior?.homeScore,

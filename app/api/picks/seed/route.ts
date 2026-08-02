@@ -68,10 +68,12 @@ function weekLabel(games: NFLGame[]): string {
 
 export async function POST() {
   try {
+    const now = Date.now();
     const games: NFLGame[] = SEED_GAMES.map((g, i) => ({
       ...g,
       id:       `test-game-${i + 1}`,
       lockTime: computeLockTime(g.commenceTime),
+      lineHistory: [{ homeSpread: g.homeSpread, at: now, source: 'open' as const }],
     }));
 
     const current = await getPicksState();

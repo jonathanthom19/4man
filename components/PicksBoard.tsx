@@ -4,11 +4,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { espnTeamLogoUrl } from '@/lib/odds-sport';
 import { LEAGUE_MEMBERS, isLeagueAdmin } from '@/lib/league-members';
 import { matchupLine, mascot } from '@/lib/picks-display';
+import { formatHomeSpread } from '@/lib/picks-line-history';
 import PicksWeekTable from './PicksWeekTable';
 import { formatLockRecord } from '@/lib/picks-grading';
 import { lockCountdown } from '@/lib/picks-utils';
 import type {
   ArchivedPicksWeek,
+  LineHistoryEntry,
   PicksAdminEdit,
   NFLGame,
   PicksSeasonState,
@@ -32,6 +34,12 @@ function formatTs(ts: number): string {
     hour: 'numeric', minute: '2-digit',
     timeZone: 'America/New_York',
   });
+}
+
+function lineHistorySourceLabel(source: LineHistoryEntry['source']): string {
+  if (source === 'open') return 'Opened';
+  if (source === 'admin') return 'Admin edit';
+  return 'Line move';
 }
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
@@ -179,6 +187,7 @@ export default function PicksBoard({
   const [weekIssues,        setWeekIssues]        = useState<WeekIssue[]>([]);
   const [adminEdits,        setAdminEdits]        = useState<PicksAdminEdit[]>([]);
   const [rolloverPending,   setRolloverPending]   = useState(false);
+  const [lineHistoryGame,   setLineHistoryGame]   = useState<NFLGame | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000);
@@ -646,11 +655,22 @@ export default function PicksBoard({
                           <span className="text-[10px] text-slate-400 px-2 py-0.5 rounded-full border">Locks in {lockCountdown(game.lockTime, now)}</span>
                         )}
                       </div>
-                      <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3">{matchupLine(game)}</p>
-                      {game.lineLockedAt && (
-                        <p className="text-[10px] text-amber-600 dark:text-amber-400 -mt-2 mb-3">
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{matchupLine(game)}</p>
+                        <button
+                          type="button"
+                          onClick={() => setLineHistoryGame(game)}
+                          className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-full px-2 py-0.5 transition-colors"
+                        >
+                          Line history
+                        </button>
+                      </div>
+                      {game.lineLockedAt ? (
+                        <p className="text-[10px] text-amber-600 dark:text-amber-400 mb-3">
                           Line locked after first pick
                         </p>
+                      ) : (
+                        <div className="mb-3" />
                       )}
 
                       <div className="grid grid-cols-2 gap-3">
@@ -820,6 +840,99 @@ export default function PicksBoard({
 
         </div>
       </div>
+
+      {lineHistoryGame && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4"
+          onClick={() => setLineHistoryGame(null)}
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="line-history-title"
+          >
+            <div className="flex items-start gap-3 px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex-1 min-w-0">
+                <p id="line-history-title" className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                  Line history
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5 truncate">{matchupLine(lineHistoryGame)}</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">{gameTimeLabel(lineHistoryGame)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLineHistoryGame(null)}
+                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-lg leading-none px-1"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="max-h-[60vh] overflow-auto px-4 py-3">
+              {(!lineHistoryGame.lineHistory || lineHistoryGame.lineHistory.length === 0) ? (
+                <div className="text-center py-6 space-y-1">
+                  <p className="text-sm text-slate-500">No recorded moves yet.</p>
+                  <p className="text-xs text-slate-400">
+                    Current line: home {formatHomeSpread(lineHistoryGame.homeSpread)}
+                  </p>
+                </div>
+              ) : (
+                <ol className="space-y-3">
+                  {[...lineHistoryGame.lineHistory].reverse().map((entry, idx, arr) => {
+                    const prev = arr[idx + 1];
+                    const changed =
+                      prev &&
+                      prev.homeSpread !== entry.homeSpread;
+                    return (
+                      <li
+                        key={`${entry.at}-${entry.source}-${idx}`}
+                        className="flex gap-3"
+                      >
+                        <div className="flex flex-col items-center pt-1">
+                          <span className={`w-2 h-2 rounded-full ${idx === 0 ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                          {idx < arr.length - 1 && <span className="w-px flex-1 bg-slate-200 dark:bg-slate-700 mt-1" />}
+                        </div>
+                        <div className="flex-1 pb-2">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                              Home {formatHomeSpread(entry.homeSpread)}
+                            </p>
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                              {lineHistorySourceLabel(entry.source)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">{formatTs(entry.at)}</p>
+                          {changed && prev && (
+                            <p className="text-[11px] text-slate-400 mt-1">
+                              Moved from {formatHomeSpread(prev.homeSpread)}
+                              {prev.homeSpread != null && entry.homeSpread != null && (
+                                <span>
+                                  {' '}({entry.homeSpread - prev.homeSpread > 0 ? '+' : ''}
+                                  {(entry.homeSpread - prev.homeSpread).toFixed(
+                                    Number.isInteger(entry.homeSpread - prev.homeSpread) ? 0 : 1,
+                                  )})
+                                </span>
+                              )}
+                            </p>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+            </div>
+
+            <p className="px-4 py-2.5 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-400">
+              Spreads shown as home team line (negative = home favored).
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

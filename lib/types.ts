@@ -38,12 +38,23 @@ export interface DraftState {
 
 export type PickResult = 'win' | 'loss' | 'push' | 'pending';
 
+export type LineHistorySource = 'open' | 'refresh' | 'admin';
+
+export interface LineHistoryEntry {
+  homeSpread: number | null;
+  /** ms since epoch */
+  at: number;
+  source: LineHistorySource;
+}
+
 export interface NFLGame {
   id: string;
   homeTeam: string; // e.g. "Philadelphia Eagles"
   awayTeam: string; // e.g. "Dallas Cowboys"
   commenceTime: string; // ISO 8601
   homeSpread: number | null; // negative = home favored
+  /** Append-only snapshots when the DraftKings home spread changes. */
+  lineHistory?: LineHistoryEntry[];
   /** Set when the first member saves a pick; automatic line updates stop. */
   lineLockedAt?: number;
   lockTime: number; // ms since epoch — picks for this game lock at this time

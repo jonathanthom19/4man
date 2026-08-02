@@ -1,7 +1,8 @@
 import { canonicalMemberName, isLeagueAdmin, isLeagueMember } from '@/lib/league-members';
+import { gradePicksState } from '@/lib/picks-grade-week';
+import { appendLineHistory } from '@/lib/picks-line-history';
 import { getPicksState, setPicksState } from '@/lib/picks-store';
 import type { UserPicksSubmission, WeeklyPick } from '@/lib/types';
-import { gradePicksState } from '@/lib/picks-grade-week';
 
 function isLocked(lockTime: number): boolean {
   return Date.now() >= lockTime;
@@ -217,11 +218,18 @@ export async function PATCH(req: Request) {
     const state = await getPicksState();
     const game = state?.games.find(g => g.id === gameId);
     if (!state || !game) return Response.json({ error: 'Game not found' }, { status: 404 });
-    const games = state.games.map(g => g.id === gameId ? {
-      ...g,
-      ...(homeSpread !== undefined ? { homeSpread } : {}),
-      ...(unlock ? { lineLockedAt: undefined } : {}),
-    } : g);
+    const games = state.games.map(g => {
+      if (g.id !== gameId) return g;
+      const nextSpread = homeSpread !== undefined ? homeSpread : g.homeSpread;
+      return {
+        ...g,
+        ...(homeSpread !== undefined ? {
+          homeSpread: nextSpread,
+          lineHistory: appendLineHistory(g, nextSpread, 'admin'),
+        } : {}),
+        ...(unlock ? { lineLockedAt: undefined } : {}),
+      };
+    });
     const next = gradePicksState({ ...state, games });
     await setPicksState(next);
     return Response.json({ state: next });
