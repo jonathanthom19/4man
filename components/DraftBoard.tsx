@@ -296,7 +296,6 @@ function SettingsModal({ state, onSave, onClose }: {
             </div>
             <div className="space-y-2">
               {order.map((name, i) => {
-                const colorIdx = HARDCODED_MANAGERS.findIndex(m => m === name);
                 return (
                   <div key={name} className="flex items-center gap-2.5 bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5">
                     <span className="text-xs font-bold text-slate-400 w-4 text-center shrink-0">{i + 1}</span>
@@ -439,6 +438,13 @@ function LoginScreen({ onLogin, loading, error }: {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function LobbyTab({ myName, presence }: { myName: string; presence: PresenceUser[] }) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 5_000);
+    return () => clearInterval(id);
+  }, []);
+
   return (
     <div className="space-y-4">
       <div className="bg-white/5 border border-white/10 rounded-2xl px-5 py-4">
@@ -455,7 +461,7 @@ function LobbyTab({ myName, presence }: { myName: string; presence: PresenceUser
         ) : (
           <div className="flex flex-col gap-2">
             {presence.map(u => {
-              const secsAgo = Math.round((Date.now() - u.lastSeenAt) / 1000);
+              const secsAgo = Math.round((now - u.lastSeenAt) / 1000);
               const isMe    = u.name === myName;
               return (
                 <div key={u.name} className="flex items-center gap-2.5">
@@ -510,7 +516,6 @@ function AdminSetupTab({ onStart, onRefreshPlayers, loading, refreshing, error, 
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Draft order</p>
         <div className="space-y-2">
           {order.map((name, i) => {
-            const colorIdx = HARDCODED_MANAGERS.findIndex(m => m === name);
             return (
               <div key={name} className="flex items-center gap-3 bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5">
                 <span className="text-xs font-bold text-slate-400 dark:text-slate-500 w-4 text-center shrink-0">{i + 1}</span>
@@ -644,7 +649,7 @@ function PastDraftsTab({ history, isAdmin, onDelete }: {
         </div>
       )}
 
-      {history.map((draft, idx) => {
+      {history.map(draft => {
         const isOpen    = expanded === draft.id;
         const date      = new Date(draft.archivedAt);
         const dateStr   = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -958,11 +963,9 @@ function assignRoster(teamPicks: DraftedPlayer[]): (DraftedPlayer | null)[] {
   return result;
 }
 
-function TeamsView({ names, picks, snake }: {
-  names: string[]; picks: DraftedPlayer[]; snake: boolean;
+function TeamsView({ names, picks }: {
+  names: string[]; picks: DraftedPlayer[];
 }) {
-  const n = names.length;
-
   // Build per-manager pick lists
   const byManager = useMemo(() => {
     const map: Record<string, DraftedPlayer[]> = {};
@@ -1815,7 +1818,7 @@ export default function DraftBoard() {
                       currentManager={curManager} managerColor={curColors}
                     />
                   ) : (
-                    <TeamsView names={draftState.managers} picks={draftState.picks} snake={snake} />
+                    <TeamsView names={draftState.managers} picks={draftState.picks} />
                   )}
                 </div>
               </div>
@@ -1825,12 +1828,4 @@ export default function DraftBoard() {
       })()}
     </div>
   );
-}
-
-// Helper used in confirm message (avoids referencing derived var before it exists in the callback)
-function currentManagerName(state: DraftState): string {
-  const n     = state.managers.length;
-  const snake = state.snakeDraft !== false;
-  const slot  = slotForPick(state.currentPick, n, snake);
-  return state.managers[slot] ?? '';
 }

@@ -7,7 +7,7 @@ const EXPIRE_SECS  = 300;
 
 type PresenceMap = Record<string, number>;
 
-let memPresence: PresenceMap = {};
+const memPresence: PresenceMap = {};
 
 function hasKv(): boolean {
   return Boolean(process.env.KV_REST_API_URL);
