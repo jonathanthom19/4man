@@ -1043,12 +1043,28 @@ function DraftGrid({ names, rounds, picks, currentPick, snake, pickOwners = {} }
                     style={{ height: 48 }}
                   >
                     {drafted ? (
-                      <div>
-                        <p className={`font-semibold leading-tight truncate text-[11px] ${isPast ? 'text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-100'}`}>{drafted.name}</p>
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <PosBadge pos={drafted.pos} />
-                          <span className="text-slate-400 dark:text-slate-500 text-[10px]">{drafted.team}</span>
+                      <div className="flex items-center gap-1.5">
+                        <div className="min-w-0 flex-1">
+                          <p className={`font-semibold leading-tight truncate text-[11px] ${isPast ? 'text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-100'}`}>{drafted.name}</p>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <PosBadge pos={drafted.pos} />
+                            <span className="text-slate-400 dark:text-slate-500 text-[10px]">{drafted.team}</span>
+                          </div>
                         </div>
+                        {traded && (
+                          <span
+                            className={`shrink-0 ${c.text}`}
+                            title={`Pick #${pn} traded from ${names[m]} to ${owner}`}
+                            aria-label={`Traded from ${names[m]} to ${owner}`}
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                              <path d="M7 7h11l-3-3" />
+                              <path d="m18 7-3 3" />
+                              <path d="M17 17H6l3 3" />
+                              <path d="m6 17 3-3" />
+                            </svg>
+                          </span>
+                        )}
                       </div>
                     ) : (
                       <div className="flex flex-col items-center justify-center h-full">
