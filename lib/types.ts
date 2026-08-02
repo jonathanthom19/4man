@@ -23,6 +23,8 @@ export interface DraftConfig {
 }
 
 export interface DraftState {
+  year?: number;
+  status?: 'scheduled' | 'active' | 'completed';
   managers: string[];
   rounds: number;
   picks: DraftedPlayer[];
@@ -32,6 +34,9 @@ export interface DraftState {
   adminName?: string;
   snakeDraft?: boolean; // defaults to true
   draftName?: string;
+  /** Pick-number ownership overrides created by pre-draft trades. */
+  pickOwners?: Record<string, string>;
+  draftStartedAt?: number;
 }
 
 // ─── NFL Picks ────────────────────────────────────────────────────────────────
@@ -156,4 +161,8 @@ export interface ArchivedDraft {
   snakeDraft?: boolean;
   completed: boolean; // true = all picks done; false = reset early
   draftName?: string;
+  year?: number;
+  status?: 'scheduled' | 'active' | 'completed';
+  pickOwners?: Record<string, string>;
+  draftStartedAt?: number;
 }

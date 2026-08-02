@@ -36,8 +36,6 @@ export async function deleteHistoryEntry(id: string): Promise<void> {
 }
 
 export async function archiveDraft(state: DraftState): Promise<void> {
-  if (state.picks.length === 0) return; // nothing worth saving
-
   const totalPicks = state.managers.length * state.rounds;
   const completed  = state.currentPick > totalPicks;
 
@@ -51,6 +49,10 @@ export async function archiveDraft(state: DraftState): Promise<void> {
     snakeDraft: state.snakeDraft,
     completed,
     ...(state.draftName ? { draftName: state.draftName } : {}),
+    ...(state.year ? { year: state.year } : {}),
+    status: state.status ?? (completed ? 'completed' : state.picks.length ? 'active' : 'scheduled'),
+    ...(state.pickOwners ? { pickOwners: state.pickOwners } : {}),
+    ...(state.draftStartedAt ? { draftStartedAt: state.draftStartedAt } : {}),
   };
 
   const history = await loadHistory();

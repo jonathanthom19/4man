@@ -1,4 +1,5 @@
 import type { Player } from '@/lib/types';
+import { getDraftState } from '@/lib/draft-store';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // KV helpers — gracefully no-ops when credentials aren't present (local dev)
@@ -95,6 +96,11 @@ export async function fetchAndCache(): Promise<{ players: Player[]; updatedAt: n
 
 export async function GET() {
   try {
+    const draft = await getDraftState();
+    if (draft?.status === 'scheduled') {
+      const { players, updatedAt } = await fetchAndCache();
+      return Response.json({ players, updatedAt, cached: false, scheduledDraft: true });
+    }
     const cached = await kvGetCache();
     if (cached) {
       return Response.json({ players: cached.players, updatedAt: cached.updatedAt, cached: true });

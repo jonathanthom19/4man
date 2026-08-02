@@ -8,6 +8,9 @@ export async function POST() {
     if (!state) {
       return Response.json({ error: 'No active draft' }, { status: 400 });
     }
+    if ((state.status ?? 'active') === 'scheduled') {
+      return Response.json({ error: 'The draft has not started' }, { status: 409 });
+    }
     if (state.picks.length === 0) {
       return Response.json({ error: 'No picks to undo' }, { status: 400 });
     }
@@ -17,6 +20,7 @@ export async function POST() {
       picks:       state.picks.slice(0, -1),
       currentPick: state.currentPick - 1,
       updatedAt:   Date.now(),
+      status:      'active' as const,
     };
 
     await setDraftState(next);

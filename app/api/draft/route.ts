@@ -15,19 +15,24 @@ export async function GET() {
 export async function POST(req: Request) {
   return withStateLock('draft', async () => {
   try {
-    const { managers, rounds, adminName, snakeDraft, draftName } = await req.json() as {
-      managers: string[]; rounds: number; adminName?: string; snakeDraft?: boolean; draftName?: string;
+    const { managers, rounds, adminName, snakeDraft, draftName, year } = await req.json() as {
+      managers: string[]; rounds: number; adminName?: string; snakeDraft?: boolean; draftName?: string; year?: number;
     };
     if (!managers?.length || !rounds) {
       return Response.json({ error: 'managers and rounds are required' }, { status: 400 });
     }
+    const current = await getDraftState();
+    if (current) await archiveDraft(current);
+    const now = Date.now();
     const state: DraftState = {
+      year: Number.isInteger(year) ? year : new Date().getFullYear(),
+      status: 'scheduled',
       managers,
       rounds,
       picks: [],
       currentPick: 1,
-      startedAt: Date.now(),
-      updatedAt: Date.now(),
+      startedAt: now,
+      updatedAt: now,
       snakeDraft: snakeDraft !== false,
       ...(adminName?.trim()  ? { adminName:  adminName.trim()  } : {}),
       ...(draftName?.trim()  ? { draftName:  draftName.trim()  } : {}),

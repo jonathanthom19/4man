@@ -78,6 +78,11 @@ function pickNum(m: number, r: number, n: number, snake = true): number {
   return r % 2 === 1 ? (r - 1) * n + m + 1 : r * n - m;
 }
 
+function ownerForPick(state: DraftState, pick: number): string {
+  const baseSlot = slotForPick(pick, state.managers.length, state.snakeDraft !== false);
+  return state.pickOwners?.[String(pick)] ?? state.managers[baseSlot] ?? '';
+}
+
 function roundForPick(pick: number, n: number): number {
   return Math.ceil(pick / n);
 }
@@ -92,14 +97,32 @@ async function apiFetchDraft(): Promise<{ state: DraftState | null; localMode: b
   return res.json();
 }
 
-async function apiStartDraft(managers: string[], rounds: number, adminName: string, snakeDraft: boolean, draftName: string): Promise<DraftState> {
+async function apiCreateDraft(managers: string[], rounds: number, adminName: string, snakeDraft: boolean, draftName: string, year: number): Promise<DraftState> {
   const res = await fetch('/api/draft', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ managers, rounds, adminName, snakeDraft, draftName }),
+    body: JSON.stringify({ managers, rounds, adminName, snakeDraft, draftName, year }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Failed to start draft');
+  return data.state;
+}
+
+async function apiActivateDraft(adminName: string): Promise<DraftState> {
+  const res = await fetch('/api/draft/start', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adminName }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? 'Failed to start draft');
+  return data.state;
+}
+
+async function apiTradePicks(adminName: string, firstPick: number, secondPick: number): Promise<DraftState> {
+  const res = await fetch('/api/draft/trade', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adminName, firstPick, secondPick }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? 'Failed to trade picks');
   return data.state;
 }
 
@@ -487,8 +510,8 @@ function LobbyTab({ myName, presence }: { myName: string; presence: PresenceUser
 // Lobby — Admin setup tab (admin only)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function AdminSetupTab({ onStart, onRefreshPlayers, loading, refreshing, error, playerUpdatedAt }: {
-  onStart:          (names: string[], rounds: number, adminName: string, snakeDraft: boolean, draftName: string) => void;
+function AdminSetupTab({ onCreate, onRefreshPlayers, loading, refreshing, error, playerUpdatedAt }: {
+  onCreate:         (names: string[], rounds: number, adminName: string, snakeDraft: boolean, draftName: string, year: number) => void;
   onRefreshPlayers: () => void;
   loading:          boolean;
   refreshing:       boolean;
@@ -501,6 +524,7 @@ function AdminSetupTab({ onStart, onRefreshPlayers, loading, refreshing, error, 
   const [snake,     setSnake]     = useState(true);
   const [admin,     setAdmin]     = useState('');
   const [draftName, setDraftName] = useState('');
+  const [year,      setYear]      = useState(new Date().getFullYear());
 
   const move = (i: number, dir: -1 | 1) => {
     const j = i + dir;
@@ -559,11 +583,19 @@ function AdminSetupTab({ onStart, onRefreshPlayers, loading, refreshing, error, 
         </div>
       </div>
 
-      {/* Draft name */}
-      <div>
+      {/* Draft year + name */}
+      <div className="grid grid-cols-[110px_1fr] gap-3">
+        <div>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Year</p>
+          <input type="number" value={year} min={new Date().getFullYear() - 1} max={new Date().getFullYear() + 2}
+            onChange={e => setYear(Number(e.target.value))}
+            className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-100 focus:outline-none" />
+        </div>
+        <div>
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Draft name</p>
         <input type="text" value={draftName} onChange={e => setDraftName(e.target.value)} placeholder="e.g. 2026 Season"
           className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-500" />
+        </div>
       </div>
 
       {/* Custom admin */}
@@ -596,11 +628,11 @@ function AdminSetupTab({ onStart, onRefreshPlayers, loading, refreshing, error, 
       {error && <p className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm rounded-lg px-4 py-3">{error}</p>}
 
       <button type="button"
-        onClick={() => onStart(order, rounds, admin.trim(), snake, draftName.trim())}
+        onClick={() => onCreate(order, rounds, admin.trim(), snake, draftName.trim(), year)}
         disabled={loading || refreshing}
         className="w-full bg-slate-900 dark:bg-slate-100 hover:bg-slate-700 dark:hover:bg-white disabled:bg-slate-300 dark:disabled:bg-slate-600 text-white dark:text-slate-900 font-bold py-3 rounded-xl transition-colors text-sm tracking-wide"
       >
-        {loading ? 'Starting draft…' : 'Start Draft'}
+        {loading ? 'Creating draft…' : 'Create Draft Board'}
       </button>
     </div>
   );
@@ -654,15 +686,11 @@ function PastDraftsTab({ history, isAdmin, onDelete }: {
         const date      = new Date(draft.archivedAt);
         const dateStr   = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         const n         = draft.managers.length;
-        const snake     = draft.snakeDraft !== false;
 
         // Group picks by slot for the expanded view
         const bySlot: DraftedPlayer[][] = Array.from({ length: n }, () => []);
         draft.picks.forEach(p => {
-          const zero  = p.pickNumber - 1;
-          const round = Math.floor(zero / n);
-          const pos   = zero % n;
-          const slot  = snake && round % 2 !== 0 ? n - 1 - pos : pos;
+          const slot = draft.managers.findIndex(manager => manager === p.manager);
           if (slot >= 0 && slot < n) bySlot[slot].push(p);
         });
 
@@ -753,13 +781,127 @@ function PastDraftsTab({ history, isAdmin, onDelete }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Lobby screen (Lobby · Past Drafts · Admin★)
+// Current annual draft tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CurrentDraftTab({ draft, isAdmin, myName, presence, loading, onOpen, onStart, onTrade }: {
+  draft: DraftState | null;
+  isAdmin: boolean;
+  myName: string;
+  presence: PresenceUser[];
+  loading: boolean;
+  onOpen: () => void;
+  onStart: () => void;
+  onTrade: (firstPick: number, secondPick: number) => Promise<void>;
+}) {
+  const [firstPick, setFirstPick] = useState(1);
+  const [secondPick, setSecondPick] = useState(2);
+  const [tradeError, setTradeError] = useState<string | null>(null);
+  const [trading, setTrading] = useState(false);
+
+  if (!draft) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-16 text-center">
+        <p className="text-white font-semibold">No draft has been created for the current year.</p>
+        <p className="text-slate-500 text-sm mt-2">An admin can create the next annual board from the Create Draft tab.</p>
+      </div>
+    );
+  }
+
+  const total = draft.managers.length * draft.rounds;
+  const status = draft.status ?? (draft.currentPick > total ? 'completed' : draft.picks.length ? 'active' : 'scheduled');
+  const options = Array.from({ length: total }, (_, index) => index + 1);
+  const tradedPicks = Object.keys(draft.pickOwners ?? {}).map(Number).sort((a, b) => a - b);
+
+  const submitTrade = async () => {
+    setTrading(true);
+    setTradeError(null);
+    try { await onTrade(firstPick, secondPick); }
+    catch (e: unknown) { setTradeError(e instanceof Error ? e.message : 'Trade failed'); }
+    finally { setTrading(false); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+        <div className="p-5 flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-black text-white">{draft.draftName || `${draft.year ?? new Date().getFullYear()} Draft`}</h2>
+              <span className={`text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-full ${
+                status === 'scheduled' ? 'bg-amber-500/15 text-amber-300' : status === 'active' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-blue-500/15 text-blue-300'
+              }`}>{status}</span>
+            </div>
+            <p className="text-slate-400 text-sm mt-1">{draft.year ?? 'Current year'} · {draft.rounds} rounds · {draft.snakeDraft === false ? 'Linear' : 'Snake'} draft</p>
+            <p className="text-slate-500 text-xs mt-2">Order: {draft.managers.join(' → ')}</p>
+          </div>
+          <button type="button" onClick={onOpen}
+            className="shrink-0 bg-white text-slate-900 text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-slate-100">
+            View draft board
+          </button>
+        </div>
+        {status === 'scheduled' && (
+          <div className="border-t border-white/10 px-5 py-3 text-xs text-amber-200/80 bg-amber-500/5">
+            The board is visible, but selections remain locked until an admin starts the draft.
+          </div>
+        )}
+      </div>
+
+      {isAdmin && status === 'scheduled' && (
+        <div className="rounded-2xl bg-white dark:bg-slate-800 p-5 space-y-4">
+          <div>
+            <h3 className="font-bold text-slate-900 dark:text-white">Pre-draft pick trades</h3>
+            <p className="text-xs text-slate-500 mt-1">Swap ownership of two pick numbers. Trades lock permanently when the draft starts.</p>
+          </div>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-3">
+            {[{ value: firstPick, set: setFirstPick, label: 'First pick' }, { value: secondPick, set: setSecondPick, label: 'Second pick' }].map((field, index) => (
+              <div key={field.label} className={index === 1 ? 'col-start-3' : ''}>
+                <label className="text-xs font-semibold text-slate-500">{field.label}</label>
+                <select value={field.value} onChange={e => field.set(Number(e.target.value))}
+                  className="mt-1 w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-2 text-xs">
+                  {options.map(pick => <option key={pick} value={pick}>#{pick} — {ownerForPick(draft, pick)}</option>)}
+                </select>
+              </div>
+            ))}
+            <span className="col-start-2 row-start-1 self-end pb-2 text-slate-400">⇄</span>
+          </div>
+          <button type="button" onClick={submitTrade} disabled={trading || firstPick === secondPick}
+            className="w-full rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 py-2.5 text-sm font-bold disabled:opacity-40">
+            {trading ? 'Saving trade…' : 'Swap pick ownership'}
+          </button>
+          {tradeError && <p className="text-sm text-red-500">{tradeError}</p>}
+          {tradedPicks.length > 0 && (
+            <div className="border-t border-slate-100 dark:border-slate-700 pt-3">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Current traded picks</p>
+              <div className="flex flex-wrap gap-2">
+                {tradedPicks.map(pick => <span key={pick} className="text-xs bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 px-2 py-1 rounded-lg">#{pick} → {ownerForPick(draft, pick)}</span>)}
+              </div>
+            </div>
+          )}
+          <button type="button" onClick={onStart} disabled={loading}
+            className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-3 text-sm font-black disabled:opacity-40">
+            {loading ? 'Starting…' : `Start ${draft.year ?? ''} Draft`}
+          </button>
+          <p className="text-[11px] text-center text-slate-500">Starting enables picks for everyone and closes pick trading.</p>
+        </div>
+      )}
+      {!isAdmin && status === 'scheduled' && <LobbyTab myName={myName} presence={presence} />}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Draft home (Current Year · Past Drafts · Create Draft)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function LobbyScreen(props: {
   myName:           string;
   isAdmin:          boolean;
-  onStart:          (names: string[], rounds: number, adminName: string, snakeDraft: boolean, draftName: string) => void;
+  currentDraft:     DraftState | null;
+  onCreate:         (names: string[], rounds: number, adminName: string, snakeDraft: boolean, draftName: string, year: number) => void;
+  onOpenDraft:      () => void;
+  onActivateDraft:  () => void;
+  onTrade:          (firstPick: number, secondPick: number) => Promise<void>;
   onRefreshPlayers: () => void;
   onBack:           () => void;
   onSwitchUser:     () => void;
@@ -771,13 +913,13 @@ function LobbyScreen(props: {
   presence:         PresenceUser[];
   history:          ArchivedDraft[];
 }) {
-  type Tab = 'lobby' | 'past' | 'admin';
-  const [tab, setTab] = useState<Tab>(props.isAdmin ? 'admin' : 'lobby');
+  type Tab = 'current' | 'past' | 'create';
+  const [tab, setTab] = useState<Tab>('current');
 
   const tabs: { key: Tab; label: string; adminOnly?: boolean }[] = [
-    { key: 'lobby', label: 'Lobby' },
+    { key: 'current', label: 'Current Year' },
     { key: 'past',  label: `Past Drafts${props.history.length ? ` (${props.history.length})` : ''}` },
-    { key: 'admin', label: '★ Admin', adminOnly: true },
+    { key: 'create', label: '★ Create Draft', adminOnly: true },
   ];
 
   return (
@@ -811,12 +953,12 @@ function LobbyScreen(props: {
             onClick={() => setTab(key)}
             className={`px-4 py-2.5 text-sm font-semibold transition-colors relative ${
               tab === key
-                ? key === 'admin' ? 'text-amber-400' : 'text-white'
-                : key === 'admin' ? 'text-amber-600 hover:text-amber-400' : 'text-slate-500 hover:text-slate-300'
+                ? key === 'create' ? 'text-amber-400' : 'text-white'
+                : key === 'create' ? 'text-amber-600 hover:text-amber-400' : 'text-slate-500 hover:text-slate-300'
             }`}
           >
             {label}
-            {tab === key && <span className={`absolute bottom-0 left-2 right-2 h-0.5 rounded-full ${key === 'admin' ? 'bg-amber-400' : 'bg-white'}`} />}
+            {tab === key && <span className={`absolute bottom-0 left-2 right-2 h-0.5 rounded-full ${key === 'create' ? 'bg-amber-400' : 'bg-white'}`} />}
           </button>
         ))}
       </div>
@@ -824,15 +966,16 @@ function LobbyScreen(props: {
       {/* Tab content */}
       <div className="relative flex-1 overflow-y-auto px-6 py-6">
         <div className="max-w-md mx-auto">
-          {tab === 'lobby' && (
-            <LobbyTab myName={props.myName} presence={props.presence} />
+          {tab === 'current' && (
+            <CurrentDraftTab draft={props.currentDraft} isAdmin={props.isAdmin} myName={props.myName} presence={props.presence} loading={props.loading}
+              onOpen={props.onOpenDraft} onStart={props.onActivateDraft} onTrade={props.onTrade} />
           )}
           {tab === 'past' && (
             <PastDraftsTab history={props.history} isAdmin={props.isAdmin} onDelete={props.onDeleteHistory} />
           )}
-          {tab === 'admin' && props.isAdmin && (
+          {tab === 'create' && props.isAdmin && (
             <AdminSetupTab
-              onStart={props.onStart}
+              onCreate={props.onCreate}
               onRefreshPlayers={props.onRefreshPlayers}
               loading={props.loading}
               refreshing={props.refreshing}
@@ -850,8 +993,8 @@ function LobbyScreen(props: {
 // Draft grid (left panel)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function DraftGrid({ names, rounds, picks, currentPick, snake }: {
-  names: string[]; rounds: number; picks: DraftedPlayer[]; currentPick: number; snake: boolean;
+function DraftGrid({ names, rounds, picks, currentPick, snake, pickOwners = {} }: {
+  names: string[]; rounds: number; picks: DraftedPlayer[]; currentPick: number; snake: boolean; pickOwners?: Record<string, string>;
 }) {
   const n = names.length;
   const pickMap = useMemo(() => {
@@ -884,10 +1027,12 @@ function DraftGrid({ names, rounds, picks, currentPick, snake }: {
             <tr key={r} ref={isCurrentRound ? currentRowRef : undefined}>
               {names.map((_, m) => {
                 const pn      = pickNum(m, r, n, snake);
+                const owner   = pickOwners[String(pn)] ?? names[m];
+                const traded  = owner !== names[m];
                 const drafted = pickMap[pn];
                 const isCur   = pn === currentPick;
                 const isPast  = pn < currentPick;
-                const c       = colorFor(names[m], m);
+                const c       = colorFor(owner, m);
                 return (
                   <td key={m}
                     className={`border-b border-r border-slate-100 dark:border-slate-700/60 last:border-r-0 px-2 py-1.5 align-middle transition-colors ${
@@ -906,11 +1051,12 @@ function DraftGrid({ names, rounds, picks, currentPick, snake }: {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-center h-full">
+                      <div className="flex flex-col items-center justify-center h-full">
                         {isCur
                           ? <span className={`text-[11px] font-bold ${c.text} animate-pulse`}>On Clock</span>
                           : <span className="text-[11px] text-slate-200 dark:text-slate-700 font-medium">{pn}</span>
                         }
+                        {traded && <span className={`text-[9px] font-bold ${c.text}`}>{owner}</span>}
                       </div>
                     )}
                   </td>
@@ -1134,15 +1280,15 @@ function AvailableView({ players, draftedIds, onRequestDraft, isMyTurn, isAdmin,
 // Draft complete screen
 // ─────────────────────────────────────────────────────────────────────────────
 
-function CompletedScreen({ names, picks, rounds, snake, onReset }: {
-  names: string[]; picks: DraftedPlayer[]; rounds: number; snake: boolean; onReset: () => void;
+function CompletedScreen({ names, picks, rounds, onReset }: {
+  names: string[]; picks: DraftedPlayer[]; rounds: number; onReset: () => void;
 }) {
   const n = names.length;
   const bySlot = useMemo(() => {
     const arr: DraftedPlayer[][] = Array.from({ length: n }, () => []);
-    picks.forEach(p => { const s = slotForPick(p.pickNumber, n, snake); if (s >= 0 && s < n) arr[s].push(p); });
+    picks.forEach(p => { const s = names.findIndex(name => name === p.manager); if (s >= 0 && s < n) arr[s].push(p); });
     return arr;
-  }, [picks, n, snake]);
+  }, [picks, n, names]);
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col">
@@ -1152,7 +1298,7 @@ function CompletedScreen({ names, picks, rounds, snake, onReset }: {
           <p className="text-slate-500 text-sm">{rounds} rounds · {n * rounds} picks</p>
         </div>
         <button onClick={onReset} className="bg-white text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg hover:bg-slate-100 transition-colors">
-          Return to Lobby
+          Current Year
         </button>
       </div>
       <div className="flex-1 flex divide-x divide-slate-800 overflow-hidden">
@@ -1448,51 +1594,81 @@ export default function DraftBoard() {
     }
   }, []);
 
-  // ── Enter draft section (from section selection screen) ───────────────────
+  // ── Enter annual draft home ───────────────────────────────────────────────
 
   const handleEnterDraft = useCallback(async () => {
     setLoading(true);
     setError(null);
     setAppMode('draft');
     try {
-      if (draftState) {
-        const { players: fetched, updatedAt } = await loadPlayers();
-        setPlayers(fetched);
-        setPlayerUpdatedAt(updatedAt);
-        setScreen('draft');
-      } else {
-        const hist = await fetch('/api/draft/history').then(r => r.json()).then(d => d.history ?? []).catch(() => []);
-        setHistory(hist);
-        setScreen('setup');
-      }
+      const [hist, playerData] = await Promise.all([
+        fetch('/api/draft/history').then(r => r.json()).then(d => d.history ?? []).catch(() => []),
+        loadPlayers(),
+      ]);
+      setHistory(hist);
+      setPlayers(playerData.players);
+      setPlayerUpdatedAt(playerData.updatedAt);
+      setScreen('setup');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Could not load draft');
     } finally {
       setLoading(false);
     }
-  }, [draftState]);
+  }, []);
 
-  // ── Start draft ───────────────────────────────────────────────────────────
+  // ── Create, open, start, and trade scheduled drafts ──────────────────────
 
-  const handleStart = useCallback(async (names: string[], rounds: number, adminName: string, snakeDraft: boolean, draftName: string) => {
+  const handleCreate = useCallback(async (names: string[], rounds: number, adminName: string, snakeDraft: boolean, draftName: string, year: number) => {
     setLoading(true);
     setError(null);
     try {
-      const [state, { players: fetched, updatedAt }] = await Promise.all([
-        apiStartDraft(names, rounds, adminName, snakeDraft, draftName),
+      const state = await apiCreateDraft(names, rounds, adminName, snakeDraft, draftName, year);
+      const [{ players: fetched, updatedAt }, hist] = await Promise.all([
         loadPlayers(),
+        fetch('/api/draft/history').then(r => r.json()).then(d => d.history ?? []).catch(() => []),
       ]);
       nullPollCount.current = 0;
       setDraftState(state);
       setPlayers(fetched);
       setPlayerUpdatedAt(updatedAt);
-      setScreen('draft');
+      setHistory(hist);
+      setScreen('setup');
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to start');
+      setError(e instanceof Error ? e.message : 'Failed to create draft');
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const handleOpenDraft = useCallback(async () => {
+    if (!draftState) return;
+    setLoading(true);
+    try {
+      const { players: fetched, updatedAt } = await loadPlayers();
+      setPlayers(fetched);
+      setPlayerUpdatedAt(updatedAt);
+      setScreen('draft');
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Could not open draft'); }
+    finally { setLoading(false); }
+  }, [draftState]);
+
+  const handleActivateDraft = useCallback(async () => {
+    if (!myName) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const next = await apiActivateDraft(myName);
+      setDraftState(next);
+      setScreen('draft');
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to start draft'); }
+    finally { setLoading(false); }
+  }, [myName]);
+
+  const handleTradePicks = useCallback(async (firstPick: number, secondPick: number) => {
+    if (!myName) return;
+    const next = await apiTradePicks(myName, firstPick, secondPick);
+    setDraftState(next);
+  }, [myName]);
 
   // ── Save settings ─────────────────────────────────────────────────────────
 
@@ -1613,8 +1789,10 @@ export default function DraftBoard() {
   const snake      = draftState?.snakeDraft !== false;
   const totalPicks = n * (draftState?.rounds ?? 0);
   const isDone     = draftState ? draftState.currentPick > totalPicks : false;
+  const draftStatus = draftState?.status ?? (isDone ? 'completed' : draftState?.picks.length ? 'active' : 'active');
+  const draftStarted = draftStatus === 'active';
   const curSlot    = draftState && !isDone ? slotForPick(draftState.currentPick, n, snake) : 0;
-  const curManager = draftState?.managers[curSlot] ?? '';
+  const curManager = draftState && !isDone ? ownerForPick(draftState, draftState.currentPick) : (draftState?.managers[curSlot] ?? '');
   const curColors  = colorFor(curManager);
   const mySlot     = myName && draftState ? draftState.managers.findIndex(m => m.toLowerCase() === myName.toLowerCase()) : -1;
   const isAdmin    = Boolean(
@@ -1623,9 +1801,9 @@ export default function DraftBoard() {
       (draftState?.adminName && myName === draftState.adminName)
     )
   );
-  const isMyTurn   = !isDone && (
+  const isMyTurn   = draftStarted && !isDone && (
     (isAdmin && adminDraftForAll) ||
-    (mySlot >= 0 && draftState ? slotForPick(draftState.currentPick, n, snake) === mySlot : false)
+    (mySlot >= 0 && draftState ? curManager.toLowerCase() === myName?.toLowerCase() : false)
   );
   const draftedIds = useMemo(() => new Set((draftState?.picks ?? []).map(p => p.player_id)), [draftState]);
 
@@ -1682,7 +1860,9 @@ export default function DraftBoard() {
 
       {screen === 'setup' && myName && (
         <LobbyScreen
-          myName={myName} isAdmin={isAdmin} onStart={handleStart} onRefreshPlayers={handleRefreshPlayers}
+          myName={myName} isAdmin={isAdmin} currentDraft={draftState}
+          onCreate={handleCreate} onOpenDraft={handleOpenDraft} onActivateDraft={handleActivateDraft} onTrade={handleTradePicks}
+          onRefreshPlayers={handleRefreshPlayers}
           onBack={() => setScreen('section')}
           onSwitchUser={switchUser} onDeleteHistory={handleDeleteHistory}
           loading={loading} refreshing={refreshing} error={error} playerUpdatedAt={playerUpdatedAt}
@@ -1691,7 +1871,7 @@ export default function DraftBoard() {
       )}
 
       {screen === 'draft' && isDone && draftState && (
-        <CompletedScreen names={draftState.managers} picks={draftState.picks} rounds={draftState.rounds} snake={snake} onReset={commitReset} />
+        <CompletedScreen names={draftState.managers} picks={draftState.picks} rounds={draftState.rounds} onReset={() => setScreen('setup')} />
       )}
 
       {screen === 'draft' && !isDone && draftState && (() => {
@@ -1701,6 +1881,8 @@ export default function DraftBoard() {
 
             {/* Nav */}
             <nav className="shrink-0 bg-slate-900 flex items-center gap-3 px-4 py-2.5">
+              <button type="button" onClick={() => setScreen('setup')} className="text-xs text-slate-500 hover:text-white">← Current Year</button>
+              <div className="w-px h-4 bg-slate-700" />
               <span className="font-bold text-sm text-white tracking-tight">4Man Drafting Portal</span>
               <div className="w-px h-4 bg-slate-700" />
               <div className="flex items-center gap-2 flex-1 max-w-xs">
@@ -1732,7 +1914,7 @@ export default function DraftBoard() {
                   ↩ Undo
                 </button>
               )}
-              {isAdmin && (
+              {isAdmin && draftStarted && (
                 <>
                   <button
                     onClick={() => setAdminDraftForAll(v => !v)}
@@ -1771,6 +1953,13 @@ export default function DraftBoard() {
               </div>
             )}
 
+            {!draftStarted && (
+              <div className="shrink-0 flex items-center justify-between gap-4 px-5 py-3 bg-amber-500 text-amber-950 text-sm font-bold">
+                <span>Draft board scheduled — picks are locked until the admin starts the draft.</span>
+                {isAdmin && <button type="button" onClick={handleActivateDraft} className="bg-amber-950 text-white px-4 py-2 rounded-lg">Start Draft</button>}
+              </div>
+            )}
+
             {/* On the clock banner */}
             <div className={`shrink-0 ${curColors.header} px-5 py-2.5 flex items-center justify-between`}>
               <div className="flex items-center gap-3">
@@ -1791,7 +1980,7 @@ export default function DraftBoard() {
             <div ref={bodyRef} className="flex-1 flex min-h-0">
               <div className="flex flex-col overflow-hidden" style={{ width: `${leftPct}%` }}>
                 <div className="flex-1 overflow-y-auto bg-white dark:bg-slate-900">
-                  <DraftGrid names={draftState.managers} rounds={draftState.rounds} picks={draftState.picks} currentPick={draftState.currentPick} snake={snake} />
+                  <DraftGrid names={draftState.managers} rounds={draftState.rounds} picks={draftState.picks} currentPick={draftState.currentPick} snake={snake} pickOwners={draftState.pickOwners} />
                 </div>
               </div>
               <div onMouseDown={startDrag} className="shrink-0 w-1.5 cursor-col-resize bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 active:bg-blue-400 transition-colors group relative" title="Drag to resize">

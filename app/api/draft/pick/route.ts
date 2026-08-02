@@ -18,6 +18,9 @@ export async function POST(req: Request) {
     if (!state) {
       return Response.json({ error: 'No active draft' }, { status: 400 });
     }
+    if ((state.status ?? 'active') !== 'active') {
+      return Response.json({ error: 'The draft has not started' }, { status: 409 });
+    }
 
     const totalPicks = state.managers.length * state.rounds;
     if (state.currentPick > totalPicks) {
@@ -25,7 +28,7 @@ export async function POST(req: Request) {
     }
 
     const expectedSlot   = slotForPick(state.currentPick, state.managers.length, state.snakeDraft !== false);
-    const expectedManager = state.managers[expectedSlot];
+    const expectedManager = state.pickOwners?.[String(state.currentPick)] ?? state.managers[expectedSlot];
     if (managerName !== expectedManager) {
       return Response.json({ error: `It is ${expectedManager}'s turn, not ${managerName}'s` }, { status: 403 });
     }
@@ -46,6 +49,7 @@ export async function POST(req: Request) {
       picks:       [...state.picks, pick],
       currentPick: state.currentPick + 1,
       updatedAt:   Date.now(),
+      status: state.currentPick + 1 > totalPicks ? 'completed' as const : 'active' as const,
     };
 
     await setDraftState(next);
