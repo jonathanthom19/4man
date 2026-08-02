@@ -6,75 +6,63 @@ function kickoffMs(game: NFLGame): number {
   return new Date(game.commenceTime).getTime();
 }
 
-/** Tuesday 6:00 AM ET on the calendar week after this week's Sunday slate. */
-function nflWeekEndMs(weekFirstKickoff: string): number {
-  const start = new Date(weekFirstKickoff);
-
-  // Walk forward to the first Sunday (ET) on or after the week's opening kickoff.
-  const cursor = new Date(start);
-  for (let i = 0; i < 10; i++) {
-    const wd = cursor.toLocaleDateString('en-US', { weekday: 'short', timeZone: ET });
-    if (wd === 'Sun') break;
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-
-  const sundayEt = cursor.toLocaleDateString('en-CA', { timeZone: ET });
-  const [y, m, d] = sundayEt.split('-').map(Number);
-  const tuesday = new Date(Date.UTC(y, m - 1, d + 2, 12, 0, 0));
-
-  // Resolve 6:00 AM ET on that Tuesday to UTC (probe for DST like picks-utils).
-  const tuesdayStr = tuesday.toLocaleDateString('en-CA', { timeZone: ET });
-  const probe = new Date(`${tuesdayStr}T12:00:00Z`);
-  const probeHour = parseInt(
-    probe.toLocaleTimeString('en-US', { timeZone: ET, hour: 'numeric', hour12: false }),
-    10,
-  );
-  const utcHour = probeHour === 7 ? 11 : 10; // 10:00 UTC = 6:00 EDT, 11:00 UTC = 6:00 EST
-  return new Date(`${tuesdayStr}T${String(utcHour).padStart(2, '0')}:00:00Z`).getTime();
+function etDateParts(date: Date): { year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: ET,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find(part => part.type === type)?.value);
+  return { year: value('year'), month: value('month'), day: value('day') };
 }
 
-/** Group games into NFL weeks (Thu opener through Monday night, then next week). */
+function seasonOpenerDateMs(season: number): number {
+  const septemberFirst = new Date(Date.UTC(season, 8, 1));
+  const daysToMonday = (8 - septemberFirst.getUTCDay()) % 7;
+  const laborDay = 1 + daysToMonday;
+  // The regular season opens on the Thursday following Labor Day.
+  return Date.UTC(season, 8, laborDay + 3);
+}
+
+/** Calendar NFL week, independent of which past games remain in the odds feed. */
+export function nflWeekNumberForDate(value: string | Date): number {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  const { year, month, day } = etDateParts(date);
+  const season = month <= 2 ? year - 1 : year;
+  const calendarDate = Date.UTC(year, month - 1, day);
+  return Math.max(1, Math.floor((calendarDate - seasonOpenerDateMs(season)) / (7 * 86_400_000)) + 1);
+}
+
+/** Group games by their real calendar NFL week, retaining gaps in the feed. */
 export function groupGamesByNflWeek(games: NFLGame[]): NFLGame[][] {
-  const sorted = [...games].sort((a, b) => kickoffMs(a) - kickoffMs(b));
-  if (!sorted.length) return [];
-
-  const weeks: NFLGame[][] = [];
-  let i = 0;
-
-  while (i < sorted.length) {
-    const weekEnd = nflWeekEndMs(sorted[i].commenceTime);
-    const weekGames: NFLGame[] = [];
-    while (i < sorted.length && kickoffMs(sorted[i]) < weekEnd) {
-      weekGames.push(sorted[i++]);
-    }
-    if (weekGames.length) weeks.push(weekGames);
+  const byWeek = new Map<number, NFLGame[]>();
+  for (const game of [...games].sort((a, b) => kickoffMs(a) - kickoffMs(b))) {
+    const week = nflWeekNumberForDate(game.commenceTime);
+    byWeek.set(week, [...(byWeek.get(week) ?? []), game]);
   }
-
-  return weeks;
+  const maxWeek = Math.max(0, ...byWeek.keys());
+  return Array.from({ length: maxWeek }, (_, index) => byWeek.get(index + 1) ?? []);
 }
 
 export function filterGamesForNflWeek(games: NFLGame[], weekNumber: number): NFLGame[] {
-  const weeks = groupGamesByNflWeek(games);
-  const idx = weekNumber - 1;
-  return idx >= 0 && idx < weeks.length ? weeks[idx] : [];
+  return games
+    .filter(game => nflWeekNumberForDate(game.commenceTime) === weekNumber)
+    .sort((a, b) => kickoffMs(a) - kickoffMs(b));
 }
 
 export function nflWeekCount(games: NFLGame[]): number {
-  return groupGamesByNflWeek(games).length;
+  return new Set(games.map(game => nflWeekNumberForDate(game.commenceTime))).size;
 }
 
 /** Pick the week we're in (or week 1 before the season starts). */
 export function detectCurrentNflWeek(games: NFLGame[], now = Date.now()): number {
-  const weeks = groupGamesByNflWeek(games);
-  if (!weeks.length) return 1;
-
-  if (now < kickoffMs(weeks[0][0])) return 1;
-
-  for (let i = 0; i < weeks.length; i++) {
-    const weekEnd = nflWeekEndMs(weeks[i][0].commenceTime);
-    if (now < weekEnd) return i + 1;
-  }
-  return weeks.length;
+  if (!games.length) return nflWeekNumberForDate(new Date(now));
+  const available = new Set(games.map(game => nflWeekNumberForDate(game.commenceTime)));
+  const calendarWeek = nflWeekNumberForDate(new Date(now));
+  if (available.has(calendarWeek)) return calendarWeek;
+  return Math.min(...available);
 }
 
 export function formatNflWeekLabel(games: NFLGame[], sportLabel: string, weekNumber: number): string {
@@ -88,9 +76,11 @@ export function formatNflWeekLabel(games: NFLGame[], sportLabel: string, weekNum
   const fmt = (d: Date) =>
     d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: ET });
   const year = parseInt(min.toLocaleDateString('en-US', { year: 'numeric', timeZone: ET }), 10);
+  const minParts = etDateParts(min);
+  const maxParts = etDateParts(max);
   const range =
-    min.getMonth() === max.getMonth()
-      ? `${fmt(min)}–${max.getDate()}, ${year}`
+    minParts.month === maxParts.month
+      ? `${fmt(min)}–${maxParts.day}, ${year}`
       : `${fmt(min)} – ${fmt(max)}, ${year}`;
   return `${prefix} · ${range}`;
 }

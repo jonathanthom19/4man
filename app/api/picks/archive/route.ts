@@ -1,13 +1,15 @@
 import { gradePicksState } from '@/lib/picks-grade-week';
-import { computeLockResults, seasonFromGames } from '@/lib/picks-grading';
+import { seasonFromGames } from '@/lib/picks-grading';
 import { archivePicksWeek } from '@/lib/picks-history-store';
 import { getPicksState, setPicksState } from '@/lib/picks-store';
-import { applyWeeklySeasonUpdate } from '@/lib/picks-season-store';
-import { getPicksHistory } from '@/lib/picks-history-store';
+import { rebuildSeasonFromArchive, setPicksSeason } from '@/lib/picks-season-store';
+import { getPicksHistory, setPicksHistory } from '@/lib/picks-history-store';
 import type { ArchivedPicksWeek, PicksState } from '@/lib/types';
 import { getWeekIssues } from '@/lib/picks-readiness';
+import { withStateLock } from '@/lib/state-lock';
 
 export async function POST() {
+  return withStateLock('picks', async () => {
   try {
     const state = await getPicksState();
     if (!state) {
@@ -27,32 +29,46 @@ export async function POST() {
     const graded = gradePicksState(state);
     const season = graded.season ?? seasonFromGames(graded.games);
     const poolDeltas = graded.lastWeeklyPoolDeltas ?? {};
-    const archiveId = `${season}-${graded.gamesRefreshedAt}`;
+    const fallbackWeekKey = [...graded.games]
+      .sort((a, b) => a.commenceTime.localeCompare(b.commenceTime))[0]?.commenceTime.slice(0, 10) ?? graded.weekLabel;
+    const archiveId = `${season}-${graded.weekNumber ? `week-${graded.weekNumber}` : fallbackWeekKey}`;
 
-    const existing = await getPicksHistory();
-    if (existing.some(h => h.id === archiveId)) {
-      return Response.json({ error: 'This week is already archived' }, { status: 400 });
-    }
-
-    const lockResults = computeLockResults(graded.games, graded.submissions);
-    const seasonState = await applyWeeklySeasonUpdate(season, poolDeltas, lockResults);
-
-    const archive: ArchivedPicksWeek = {
+    const history = await getPicksHistory();
+    const priorArchive = history.find(h =>
+      h.id === archiveId ||
+      (h.season === season && (
+        (graded.weekNumber != null && h.weekNumber === graded.weekNumber) ||
+        h.weekLabel === graded.weekLabel
+      )),
+    );
+    const archive: ArchivedPicksWeek = priorArchive ?? {
       id: archiveId,
       season,
+      weekNumber: graded.weekNumber,
       weekLabel: graded.weekLabel,
       archivedAt: Date.now(),
       games: graded.games,
       submissions: graded.submissions,
       sportKey: graded.sportKey,
       weeklyPoolDeltas: poolDeltas,
-      balancesAfterWeek: { ...seasonState.balances },
-      lockRecordsAfterWeek: { ...seasonState.lockRecords },
+      balancesAfterWeek: {},
+      lockRecordsAfterWeek: {},
       gradedAt: graded.gradedAt ?? Date.now(),
       adminEdits: graded.adminEdits,
     };
 
-    await archivePicksWeek(archive);
+    if (!priorArchive) await archivePicksWeek(archive);
+
+    // The archive is the source of truth. Recomputing the ledger means a retry
+    // after any partial write produces the same totals instead of adding twice.
+    const persistedHistory = await getPicksHistory();
+    const seasonWeeks = persistedHistory.filter(week => week.season === season);
+    const rebuilt = rebuildSeasonFromArchive(season, seasonWeeks);
+    const rebuiltById = new Map(rebuilt.weeks.map(week => [week.id, week]));
+    const nextHistory = persistedHistory.map(week => rebuiltById.get(week.id) ?? week);
+    const finalizedArchive = rebuiltById.get(archiveId) ?? archive;
+    await setPicksHistory(nextHistory);
+    await setPicksSeason(rebuilt.seasonState);
 
     const cleared: PicksState = {
       weekLabel: graded.weekLabel,
@@ -66,8 +82,9 @@ export async function POST() {
     };
     await setPicksState(cleared);
 
-    return Response.json({ archived: archive, state: cleared });
+    return Response.json({ archived: finalizedArchive, state: cleared });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
+  });
 }

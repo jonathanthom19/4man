@@ -2,8 +2,10 @@ import { gradePicksState } from '@/lib/picks-grade-week';
 import { seasonFromGames } from '@/lib/picks-grading';
 import { getPicksState, setPicksState } from '@/lib/picks-store';
 import { getPicksSeason } from '@/lib/picks-season-store';
+import { withStateLock } from '@/lib/state-lock';
 
 export async function POST() {
+  return withStateLock('picks', async () => {
   try {
     const state = await getPicksState();
     if (!state) {
@@ -20,4 +22,5 @@ export async function POST() {
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
+  });
 }

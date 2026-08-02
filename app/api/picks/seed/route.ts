@@ -6,6 +6,7 @@
 import { getPicksState, setPicksState } from '@/lib/picks-store';
 import { computeLockTime } from '@/lib/picks-utils';
 import type { NFLGame, PicksState } from '@/lib/types';
+import { withStateLock } from '@/lib/state-lock';
 
 const SEED_GAMES: Omit<NFLGame, 'id' | 'lockTime'>[] = [
   {
@@ -67,6 +68,7 @@ function weekLabel(games: NFLGame[]): string {
 }
 
 export async function POST() {
+  return withStateLock('picks', async () => {
   try {
     const now = Date.now();
     const games: NFLGame[] = SEED_GAMES.map((g, i) => ({
@@ -89,4 +91,5 @@ export async function POST() {
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
+  });
 }

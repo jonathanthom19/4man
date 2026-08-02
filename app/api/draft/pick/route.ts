@@ -1,5 +1,6 @@
 import { getDraftState, setDraftState } from '@/lib/draft-store';
 import type { Player, DraftedPlayer } from '@/lib/types';
+import { withStateLock } from '@/lib/state-lock';
 
 function slotForPick(pick: number, n: number, snake = true): number {
   const zero  = pick - 1;
@@ -9,6 +10,7 @@ function slotForPick(pick: number, n: number, snake = true): number {
 }
 
 export async function POST(req: Request) {
+  return withStateLock('draft', async () => {
   try {
     const { player, managerName } = await req.json() as { player: Player; managerName: string };
 
@@ -51,4 +53,5 @@ export async function POST(req: Request) {
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
+  });
 }

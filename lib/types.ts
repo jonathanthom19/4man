@@ -130,6 +130,7 @@ export interface PicksSeasonState {
 export interface ArchivedPicksWeek {
   id: string;
   season: string;
+  weekNumber?: number;
   weekLabel: string;
   archivedAt: number;
   games: NFLGame[];

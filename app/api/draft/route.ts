@@ -1,6 +1,7 @@
 import { getDraftState, setDraftState, hasKv } from '@/lib/draft-store';
 import { archiveDraft } from '@/lib/history-store';
 import type { DraftState } from '@/lib/types';
+import { withStateLock } from '@/lib/state-lock';
 
 export async function GET() {
   try {
@@ -12,6 +13,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  return withStateLock('draft', async () => {
   try {
     const { managers, rounds, adminName, snakeDraft, draftName } = await req.json() as {
       managers: string[]; rounds: number; adminName?: string; snakeDraft?: boolean; draftName?: string;
@@ -35,9 +37,11 @@ export async function POST(req: Request) {
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
+  });
 }
 
 export async function PATCH(req: Request) {
+  return withStateLock('draft', async () => {
   try {
     const updates = await req.json() as Partial<DraftState>;
     const state = await getDraftState();
@@ -48,9 +52,11 @@ export async function PATCH(req: Request) {
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
+  });
 }
 
 export async function DELETE() {
+  return withStateLock('draft', async () => {
   try {
     const current = await getDraftState();
     if (current) await archiveDraft(current);
@@ -59,4 +65,5 @@ export async function DELETE() {
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
+  });
 }

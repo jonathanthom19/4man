@@ -1,6 +1,8 @@
 import { getDraftState, setDraftState } from '@/lib/draft-store';
+import { withStateLock } from '@/lib/state-lock';
 
 export async function POST() {
+  return withStateLock('draft', async () => {
   try {
     const state = await getDraftState();
     if (!state) {
@@ -22,4 +24,5 @@ export async function POST() {
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
+  });
 }

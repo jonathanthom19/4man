@@ -1,5 +1,6 @@
-import type { LockRecord, PicksSeasonState } from './types';
+import type { ArchivedPicksWeek, LockRecord, PicksSeasonState } from './types';
 import { LEAGUE_MEMBERS } from './league-members';
+import { computeLockResults } from './picks-grading';
 
 const SEASON_KEY = 'fantasy_picks_season';
 
@@ -62,4 +63,40 @@ export async function applyWeeklySeasonUpdate(
   const next: PicksSeasonState = { season, balances, lockRecords };
   await setPicksSeason(next);
   return next;
+}
+
+/** Rebuild a season deterministically from its archive, making archive retries safe. */
+export function rebuildSeasonFromArchive(
+  season: string,
+  weeks: ArchivedPicksWeek[],
+): { seasonState: PicksSeasonState; weeks: ArchivedPicksWeek[] } {
+  const balances: Record<string, number> = Object.fromEntries(LEAGUE_MEMBERS.map(m => [m, 0]));
+  const lockRecords: Record<string, LockRecord> = Object.fromEntries(
+    LEAGUE_MEMBERS.map(m => [m, { wins: 0, losses: 0, pushes: 0 }]),
+  );
+
+  const rebuilt = [...weeks]
+    .sort((a, b) => a.archivedAt - b.archivedAt)
+    .map(week => {
+      for (const [name, delta] of Object.entries(week.weeklyPoolDeltas)) {
+        balances[name] = (balances[name] ?? 0) + delta;
+      }
+      for (const [name, result] of Object.entries(computeLockResults(week.games, week.submissions))) {
+        const record = lockRecords[name] ?? { wins: 0, losses: 0, pushes: 0 };
+        if (result === 'win') record.wins++;
+        else if (result === 'loss') record.losses++;
+        else if (result === 'push') record.pushes++;
+        lockRecords[name] = record;
+      }
+      return {
+        ...week,
+        balancesAfterWeek: { ...balances },
+        lockRecordsAfterWeek: structuredClone(lockRecords),
+      };
+    });
+
+  return {
+    seasonState: { season, balances: { ...balances }, lockRecords: structuredClone(lockRecords) },
+    weeks: rebuilt,
+  };
 }

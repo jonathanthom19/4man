@@ -5,6 +5,7 @@
 import { getOddsSportConfig } from '@/lib/odds-sport';
 import { getPicksState, setPicksState } from '@/lib/picks-store';
 import type { NFLGame } from '@/lib/types';
+import { withStateLock } from '@/lib/state-lock';
 
 interface ScoresTeam { name: string; score: string; }
 interface ScoresGame {
@@ -29,11 +30,6 @@ export async function POST() {
     return Response.json({ error: 'ODDS_API_KEY environment variable is not set' }, { status: 500 });
   }
 
-  const state = await getPicksState();
-  if (!state?.games.length) {
-    return Response.json({ error: 'No active picks week' }, { status: 400 });
-  }
-
   try {
     const sport = getOddsSportConfig();
     const url = new URL(`https://api.the-odds-api.com/v4/sports/${sport.key}/scores/`);
@@ -48,6 +44,12 @@ export async function POST() {
 
     const scoresData = await res.json() as ScoresGame[];
     const byId = new Map(scoresData.map(g => [g.id, g]));
+
+    return withStateLock('picks', async () => {
+    const state = await getPicksState();
+    if (!state?.games.length) {
+      return Response.json({ error: 'No active picks week' }, { status: 400 });
+    }
 
     const games: NFLGame[] = state.games.map(game => {
       const remote = byId.get(game.id);
@@ -72,6 +74,7 @@ export async function POST() {
       state: next,
       completedCount,
       remaining: res.headers.get('x-requests-remaining'),
+    });
     });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });

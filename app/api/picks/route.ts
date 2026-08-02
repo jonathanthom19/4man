@@ -3,6 +3,7 @@ import { gradePicksState } from '@/lib/picks-grade-week';
 import { appendLineHistory } from '@/lib/picks-line-history';
 import { getPicksState, setPicksState } from '@/lib/picks-store';
 import type { UserPicksSubmission, WeeklyPick } from '@/lib/types';
+import { withStateLock } from '@/lib/state-lock';
 
 function isLocked(lockTime: number): boolean {
   return Date.now() >= lockTime;
@@ -34,6 +35,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  return withStateLock('picks', async () => {
   try {
     const { userName, picks, lockOfWeekGameId } = await req.json() as {
       userName: string;
@@ -138,10 +140,12 @@ export async function POST(req: Request) {
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
+  });
 }
 
 /** Admin override for a missing/corrected pick or Lock of the Week. */
 export async function PUT(req: Request) {
+  return withStateLock('picks', async () => {
   try {
     const { adminName, userName, gameId, selectedTeam, setAsLock, reason } = await req.json() as {
       adminName: string; userName: string; gameId: string; selectedTeam: string; setAsLock?: boolean; reason?: string;
@@ -206,10 +210,12 @@ export async function PUT(req: Request) {
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
+  });
 }
 
 /** Admin line override/unlock for a single active game. */
 export async function PATCH(req: Request) {
+  return withStateLock('picks', async () => {
   try {
     const { adminName, gameId, homeSpread, unlock } = await req.json() as {
       adminName: string; gameId: string; homeSpread?: number | null; unlock?: boolean;
@@ -236,10 +242,12 @@ export async function PATCH(req: Request) {
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
+  });
 }
 
 // Admin: wipe all submissions to start a fresh week
 export async function DELETE() {
+  return withStateLock('picks', async () => {
   try {
     const state = await getPicksState();
     if (!state) return Response.json({ ok: true });
@@ -253,4 +261,5 @@ export async function DELETE() {
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
+  });
 }

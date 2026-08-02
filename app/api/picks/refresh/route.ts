@@ -20,6 +20,7 @@ import { appendLineHistory } from '@/lib/picks-line-history';
 import { getPicksState, setPicksState } from '@/lib/picks-store';
 import { computeLockTime } from '@/lib/picks-utils';
 import type { NFLGame, PicksState } from '@/lib/types';
+import { withStateLock } from '@/lib/state-lock';
 
 interface OddsOutcome { name: string; price: number; point: number; }
 interface OddsMarket  { key: string; outcomes: OddsOutcome[]; }
@@ -89,6 +90,7 @@ export async function POST(req: Request) {
 
     const data = await res.json() as OddsGame[];
 
+    return withStateLock('picks', async () => {
     const current = await getPicksState();
     const priorById = new Map((current?.games ?? []).map(g => [g.id, g]));
 
@@ -181,6 +183,7 @@ export async function POST(req: Request) {
       sport: sport.label,
       weekNumber,
       totalGamesFromApi: allGames.length,
+    });
     });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
