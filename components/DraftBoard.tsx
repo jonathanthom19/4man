@@ -1709,11 +1709,9 @@ export default function DraftBoard() {
   const requestDraft = useCallback((player: Player) => {
     if (!myName || !draftState) return;
     // Recompute who is on the clock at click-time (avoids stale-closure issues)
-    const n2       = draftState.managers.length;
-    const snake2   = draftState.snakeDraft !== false;
-    const isDone2  = draftState.currentPick > n2 * draftState.rounds;
-    const slot2    = isDone2 ? 0 : slotForPick(draftState.currentPick, n2, snake2);
-    const onClock  = draftState.managers[slot2] ?? '';
+    const total2   = draftState.managers.length * draftState.rounds;
+    const isDone2  = draftState.currentPick > total2;
+    const onClock  = isDone2 ? '' : ownerForPick(draftState, draftState.currentPick);
     const amAdmin  = Boolean(myName && (HARDCODED_ADMINS.has(myName.toLowerCase()) || (draftState.adminName && myName.toLowerCase() === draftState.adminName.toLowerCase())));
     // Always use the canonical name from the managers array so it matches the server's case exactly
     const myCanonical = draftState.managers.find(m => m.toLowerCase() === myName.toLowerCase()) ?? myName;
