@@ -100,7 +100,7 @@ export async function POST(req: Request) {
     const current = await getPicksState();
     const priorById = new Map((current?.games ?? []).map(g => [g.id, g]));
 
-    const fetchedGames: NFLGame[] = data
+    let fetchedGames: NFLGame[] = data
       .map((g): NFLGame => {
         let homeSpread: number | null = null;
         const book = g.bookmakers.find(b => b.key === 'draftkings');
@@ -134,13 +134,18 @@ export async function POST(req: Request) {
           completed:    prior?.completed,
         };
       })
+    if (preseason && fetchedGames.length) {
+      const firstKickoff = Math.min(...fetchedGames.map(game => new Date(game.commenceTime).getTime()));
+      const nextPreseasonWeek = firstKickoff + 7 * 24 * 60 * 60 * 1000;
+      fetchedGames = fetchedGames.filter(game => new Date(game.commenceTime).getTime() < nextPreseasonWeek);
+    }
     // The odds feed generally contains upcoming games only. Retain current-week
     // games that disappeared from that feed after kickoff so scores and picks
     // are never lost during an automatic line refresh.
     const fetchedIds = new Set(fetchedGames.map(g => g.id));
     const allGames = [
       ...fetchedGames,
-      ...(current?.games ?? [])
+      ...(!preseason && current?.sportKey === sport.key ? current.games : [])
         .filter(g => !fetchedIds.has(g.id))
         .map(g => current?.submissions.some(s => s.picks.some(p => p.gameId === g.id))
           ? g
