@@ -8,7 +8,7 @@
  * Get a free key (500 req/month) at https://the-odds-api.com
  */
 
-import { getOddsSportConfig } from '@/lib/odds-sport';
+import { getOddsSportConfig, NFL_PRESEASON_SPORT_KEY } from '@/lib/odds-sport';
 import {
   detectCurrentNflWeek,
   filterGamesForNflWeek,
@@ -57,6 +57,10 @@ function parseManual(body: unknown): boolean {
   return Boolean(body && typeof body === 'object' && (body as { manual?: unknown }).manual === true);
 }
 
+function parsePreseason(body: unknown): boolean {
+  return Boolean(body && typeof body === 'object' && (body as { preseason?: unknown }).preseason === true);
+}
+
 export async function POST(req: Request) {
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) {
@@ -65,16 +69,18 @@ export async function POST(req: Request) {
 
   let requestedWeek: number | undefined;
   let manual = false;
+  let preseason = false;
   try {
     const body = await req.json();
     requestedWeek = parseWeek(body);
     manual = parseManual(body);
+    preseason = parsePreseason(body);
   } catch {
     requestedWeek = undefined;
   }
 
   try {
-    const sport = getOddsSportConfig();
+    const sport = getOddsSportConfig(preseason ? NFL_PRESEASON_SPORT_KEY : undefined);
     const url = new URL(`https://api.the-odds-api.com/v4/sports/${sport.key}/odds/`);
     url.searchParams.set('apiKey',      apiKey);
     url.searchParams.set('regions',     'us');
@@ -158,13 +164,15 @@ export async function POST(req: Request) {
       }
     }
 
-    const label = weekNumber
+    const label = preseason
+      ? weekLabel(games, 'NFL Preseason Week 1')
+      : weekNumber
       ? formatNflWeekLabel(games, sport.label, weekNumber)
       : weekLabel(games, sport.label);
 
     const next: PicksState = {
       weekLabel:        label,
-      weekNumber,
+      weekNumber: preseason ? 1 : weekNumber,
       games,
       gamesRefreshedAt: Date.now(),
       submissions:      current?.submissions ?? [],
