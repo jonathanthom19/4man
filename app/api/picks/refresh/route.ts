@@ -1,6 +1,6 @@
 /**
  * Fetches upcoming games with DraftKings spreads from The Odds API
- * and stores them in KV, preserving existing submissions.
+ * and stores them in KV, preserving submissions only when refreshing the same slate.
  *
  * Requires env var:  ODDS_API_KEY
  * Optional:         ODDS_SPORT_KEY (default americanfootball_nfl; use basketball_nba to test off-season)
@@ -175,18 +175,24 @@ export async function POST(req: Request) {
       ? formatNflWeekLabel(games, sport.label, weekNumber)
       : weekLabel(games, sport.label);
 
+    const effectiveWeekNumber = preseason ? 1 : weekNumber;
+    const currentGameIds = new Set((current?.games ?? []).map(game => game.id));
+    const sameSlate = current?.sportKey === sport.key
+      && current?.weekNumber === effectiveWeekNumber
+      && games.some(game => currentGameIds.has(game.id));
+
     const next: PicksState = {
       weekLabel:        label,
-      weekNumber: preseason ? 1 : weekNumber,
+      weekNumber: effectiveWeekNumber,
       games,
       gamesRefreshedAt: Date.now(),
-      submissions:      current?.submissions ?? [],
+      submissions:      sameSlate ? (current?.submissions ?? []) : [],
       sportKey:         sport.key,
-      season:           current?.season ?? seasonFromGames(games),
-      gradedAt:         current?.gradedAt,
-      lastWeeklyPoolDeltas: current?.lastWeeklyPoolDeltas,
-      rolloverPending: current?.rolloverPending,
-      adminEdits: current?.adminEdits,
+      season:           sameSlate ? (current?.season ?? seasonFromGames(games)) : seasonFromGames(games),
+      gradedAt:         sameSlate ? current?.gradedAt : undefined,
+      lastWeeklyPoolDeltas: sameSlate ? current?.lastWeeklyPoolDeltas : undefined,
+      rolloverPending: sameSlate ? current?.rolloverPending : undefined,
+      adminEdits: sameSlate ? current?.adminEdits : undefined,
     };
 
     await setPicksState(next);
