@@ -181,6 +181,12 @@ export async function POST(req: Request) {
       && current?.weekNumber === effectiveWeekNumber
       && games.some(game => currentGameIds.has(game.id));
 
+    if (!sameSlate && current?.submissions.length) {
+      return Response.json({
+        error: `Archive ${current.weekLabel} before loading a different picks week. To discard a test slate instead, clear its submissions first.`,
+      }, { status: 409 });
+    }
+
     const next: PicksState = {
       weekLabel:        label,
       weekNumber: effectiveWeekNumber,
