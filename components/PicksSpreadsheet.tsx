@@ -75,7 +75,7 @@ export default function PicksSpreadsheet({
       {/* Season summary */}
       <div className="px-4 grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Season balance</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">Season balance</p>
           <div className="grid grid-cols-2 gap-2">
             {LEAGUE_MEMBERS.map(name => {
               const bal = balances[name] ?? 0;
@@ -186,7 +186,7 @@ export default function PicksSpreadsheet({
                           : picked?.result === 'loss'
                             ? 'text-red-500'
                             : picked?.result === 'push'
-                              ? 'text-slate-400'
+                              ? 'text-slate-600 dark:text-slate-400'
                               : '';
 
                       return (
@@ -219,7 +219,7 @@ export default function PicksSpreadsheet({
           </tbody>
         </table>
       </div>
-      <p className="px-4 text-[10px] text-slate-400 pb-2">
+      <p className="px-4 text-[10px] text-slate-600 dark:text-slate-400 pb-2">
         {weekLabel}
         {sportKey ? ` · ${sportKey}` : ''}
         {archive ? ` · Archived ${new Date(archive.archivedAt).toLocaleDateString()}` : ''}

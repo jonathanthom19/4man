@@ -55,7 +55,7 @@ export default function PicksWeekTable({
                   className="px-3 py-2 text-left align-bottom"
                   aria-label={gameColumnHeader(game)}
                 >
-                  <span className="block text-[10px] text-slate-400">{gameColumnDay(game)}</span>
+                  <span className="block text-[10px] text-slate-300">{gameColumnDay(game)}</span>
                   <span className="block text-xs whitespace-nowrap">{matchupLine(game)}</span>
                   {finalScoreLine(game) && (
                     <span className="block text-[10px] text-emerald-400 font-normal">
@@ -93,7 +93,7 @@ export default function PicksWeekTable({
                     return (
                       <td key={game.id} className="px-3 py-2 whitespace-nowrap">
                         {p ? (
-                          <span className={resultClass(p.result)}>
+                          <span className={`${resultClass(p.result) || 'font-medium text-slate-800 dark:text-slate-200'}`}>
                             {mascot(p.selectedTeam)}
                             {p.result && p.result !== 'pending' && (
                               <span className="ml-1">{resultGlyph(p.result)}</span>
@@ -125,7 +125,7 @@ export default function PicksWeekTable({
 
       {balancesAfterWeek && (
         <div className="shrink-0 px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80">
-          <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-2">
+          <p className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 font-semibold mb-2">
             Season balance after {weekLabel}
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">

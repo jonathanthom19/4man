@@ -383,7 +383,7 @@ export default function PicksBoard({
 
   return (
     <div className={dark ? 'dark' : ''}>
-      <div className="min-h-screen flex flex-col bg-slate-100 dark:bg-slate-950">
+      <div className="min-h-screen flex flex-col bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
 
         <nav className="shrink-0 bg-slate-900 flex items-center gap-3 px-4 py-2.5 flex-wrap">
           <button onClick={onLeave} className="text-slate-400 hover:text-white text-xs transition-colors">← Back</button>
@@ -427,11 +427,11 @@ export default function PicksBoard({
           {/* ── Home ──────────────────────────────────────────────────────── */}
           {screen === 'home' && (
             <div className="flex-1 flex flex-col items-center p-6 gap-6 max-w-lg mx-auto w-full">
-              {loading && <p className="text-slate-400 text-sm animate-pulse">Loading…</p>}
+              {loading && <p className="text-slate-600 dark:text-slate-400 text-sm animate-pulse">Loading…</p>}
 
               {!loading && !picksState?.games.length && (
                 <div className="text-center space-y-2">
-                  <p className="text-slate-400 text-sm">No games loaded yet.</p>
+                  <p className="text-slate-600 dark:text-slate-400 text-sm">No games loaded yet.</p>
                   {admin && <p className="text-slate-500 text-xs">Refresh lines or load test data.</p>}
                 </div>
               )}
@@ -653,11 +653,11 @@ export default function PicksBoard({
                       className={`rounded-2xl border p-4 ${locked ? 'opacity-70 bg-slate-50 dark:bg-slate-900/40' : 'bg-white dark:bg-slate-900'}`}
                     >
                       <div className="flex items-start justify-between mb-1">
-                        <p className="text-xs text-slate-400">{gameTimeLabel(game)}</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-400">{gameTimeLabel(game)}</p>
                         {locked ? (
                           <span className="text-[10px] font-bold text-red-500 border border-red-500/20 px-2 py-0.5 rounded-full">LOCKED</span>
                         ) : (
-                          <span className="text-[10px] text-slate-400 px-2 py-0.5 rounded-full border">Locks in {lockCountdown(game.lockTime, now)}</span>
+                          <span className="text-[10px] text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-full border">Locks in {lockCountdown(game.lockTime, now)}</span>
                         )}
                       </div>
                       <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{matchupLine(game)}</p>
@@ -698,7 +698,7 @@ export default function PicksBoard({
                               }}
                               disabled={locked}
                               className={`flex flex-col items-center gap-2 rounded-xl py-4 px-2 disabled:cursor-not-allowed ${
-                                isSelected ? 'bg-slate-900 dark:bg-white ring-2 ring-slate-900 dark:ring-white' : 'bg-slate-50 dark:bg-slate-800'
+                                isSelected ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 ring-2 ring-slate-900 dark:ring-white' : 'bg-slate-50 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
                               }`}
                             >
                               {logoUrl ? (
