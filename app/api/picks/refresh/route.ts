@@ -192,6 +192,7 @@ export async function POST(req: Request) {
       weekNumber: effectiveWeekNumber,
       games,
       gamesRefreshedAt: Date.now(),
+      scoresRefreshedAt: sameSlate ? current?.scoresRefreshedAt : undefined,
       submissions:      sameSlate ? (current?.submissions ?? []) : [],
       sportKey:         sport.key,
       season:           sameSlate ? (current?.season ?? seasonFromGames(games)) : seasonFromGames(games),

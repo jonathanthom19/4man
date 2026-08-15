@@ -24,16 +24,28 @@ function parseScore(scores: ScoresTeam[] | null, teamName: string): number | nul
   return Number.isNaN(n) ? null : n;
 }
 
-export async function POST() {
+const SCORE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
+export async function POST(req?: Request) {
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) {
     return Response.json({ error: 'ODDS_API_KEY environment variable is not set' }, { status: 500 });
   }
 
+  return withStateLock('picks-scores-refresh', async () => {
   try {
     const activeState = await getPicksState();
     if (!activeState?.games.length) {
       return Response.json({ error: 'No active picks week' }, { status: 400 });
+    }
+
+    const manual = req ? new URL(req.url).searchParams.get('manual') === '1' : false;
+    if (!manual && activeState.scoresRefreshedAt && Date.now() - activeState.scoresRefreshedAt < SCORE_REFRESH_INTERVAL_MS) {
+      return Response.json({
+        state: activeState,
+        completedCount: activeState.games.filter(game => game.completed).length,
+        cached: true,
+      });
     }
 
     const sport = getOddsSportConfig(activeState.sportKey);
@@ -71,17 +83,19 @@ export async function POST() {
       };
     });
 
-    const next = { ...state, games };
+    const next = { ...state, games, scoresRefreshedAt: Date.now() };
     await setPicksState(next);
     const completedCount = games.filter(g => g.completed).length;
 
     return Response.json({
       state: next,
       completedCount,
+      cached: false,
       remaining: res.headers.get('x-requests-remaining'),
     });
     });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
+  });
 }

@@ -91,6 +91,8 @@ export interface PicksState {
   weekNumber?: number;
   games: NFLGame[];
   gamesRefreshedAt: number;
+  /** Last completed-score API check, used to rate-limit live browser refreshes. */
+  scoresRefreshedAt?: number;
   submissions: UserPicksSubmission[];
   /** Odds API sport key from last refresh (e.g. basketball_nba). */
   sportKey?: string;

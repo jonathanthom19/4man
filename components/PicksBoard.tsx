@@ -100,11 +100,11 @@ async function apiRefreshGames(week: number, preseason = false): Promise<PicksSt
   return data.state;
 }
 
-async function apiFetchScores(): Promise<PicksState> {
-  const res  = await fetch('/api/picks/scores', { method: 'POST' });
+async function apiFetchScores(manual = true): Promise<{ state: PicksState; cached: boolean }> {
+  const res  = await fetch(`/api/picks/scores${manual ? '?manual=1' : ''}`, { method: 'POST' });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Scores fetch failed');
-  return data.state;
+  return { state: data.state, cached: Boolean(data.cached) };
 }
 
 async function apiGrade(): Promise<{ state: PicksState; season: PicksSeasonState }> {
@@ -239,13 +239,19 @@ export default function PicksBoard({
     if (screen === 'make') return;
     const refreshVisibleState = async () => {
       try {
-        const state = await apiFetchPicks(myName);
-        setPicksState(state);
+        const scoreResult = await apiFetchScores(false);
+        if (!scoreResult.cached) {
+          const graded = await apiGrade();
+          setPicksState(graded.state);
+        } else {
+          setPicksState(scoreResult.state);
+        }
       } catch {
         // Keep the last good state; the normal load flow displays request errors.
       }
     };
-    const id = setInterval(refreshVisibleState, 60_000);
+    void refreshVisibleState();
+    const id = setInterval(refreshVisibleState, 5 * 60_000);
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') void refreshVisibleState();
     };
@@ -302,7 +308,7 @@ export default function PicksBoard({
     setLoading(true);
     setError(null);
     try {
-      const next = await apiFetchScores();
+      const { state: next } = await apiFetchScores();
       setPicksState(next);
       const n = next.games.filter(g => g.completed).length;
       setSuccess(`Scores updated — ${n} / ${next.games.length} games final.`);
