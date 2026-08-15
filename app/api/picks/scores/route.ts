@@ -31,7 +31,12 @@ export async function POST() {
   }
 
   try {
-    const sport = getOddsSportConfig();
+    const activeState = await getPicksState();
+    if (!activeState?.games.length) {
+      return Response.json({ error: 'No active picks week' }, { status: 400 });
+    }
+
+    const sport = getOddsSportConfig(activeState.sportKey);
     const url = new URL(`https://api.the-odds-api.com/v4/sports/${sport.key}/scores/`);
     url.searchParams.set('apiKey', apiKey);
     url.searchParams.set('daysFrom', '3');

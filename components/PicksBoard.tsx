@@ -235,6 +235,27 @@ export default function PicksBoard({
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    if (screen === 'make') return;
+    const refreshVisibleState = async () => {
+      try {
+        const state = await apiFetchPicks(myName);
+        setPicksState(state);
+      } catch {
+        // Keep the last good state; the normal load flow displays request errors.
+      }
+    };
+    const id = setInterval(refreshVisibleState, 60_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refreshVisibleState();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [myName, screen]);
+
   const handleSubmit = async () => {
     if (!picksState) return;
     const existingSubmission = picksState.submissions.find(s => s.userName === myName);

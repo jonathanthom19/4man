@@ -4,6 +4,7 @@ import { POST as gradeWeek } from '@/app/api/picks/grade/route';
 import { POST as archiveWeek } from '@/app/api/picks/archive/route';
 import { getPicksState, setPicksState } from '@/lib/picks-store';
 import { getWeekIssues } from '@/lib/picks-readiness';
+import { NFL_PRESEASON_SPORT_KEY } from '@/lib/odds-sport';
 
 function authorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -16,6 +17,13 @@ function internalRequest(path: string, body?: object): Request {
     headers: { 'Content-Type': 'application/json' },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
+}
+
+function refreshBody(state: Awaited<ReturnType<typeof getPicksState>>, week?: number): object {
+  return {
+    ...(week ? { week } : {}),
+    ...(state?.sportKey === NFL_PRESEASON_SPORT_KEY ? { preseason: true } : {}),
+  };
 }
 
 async function responseBody(res: Response): Promise<unknown> {
@@ -63,7 +71,7 @@ export async function GET(req: Request) {
       if (!archiveResponse.ok) {
         // Keep the old week active. The hourly cron retries after an admin
         // fills missing picks/locks or the remaining score becomes final.
-        results.lines = await responseBody(await refreshLines(internalRequest('/api/picks/refresh', { week: current.weekNumber })));
+        results.lines = await responseBody(await refreshLines(internalRequest('/api/picks/refresh', refreshBody(current, current.weekNumber))));
         return Response.json({ ok: false, rollover: true, pending: true, results }, { status: 409 });
       }
     }
@@ -72,7 +80,7 @@ export async function GET(req: Request) {
     const current = await getPicksState();
     if (!current?.awaitingWednesday) {
       const week = current?.weekNumber ?? before?.weekNumber;
-      results.lines = await responseBody(await refreshLines(internalRequest('/api/picks/refresh', week ? { week } : {})));
+      results.lines = await responseBody(await refreshLines(internalRequest('/api/picks/refresh', refreshBody(current, week))));
     }
   }
 
