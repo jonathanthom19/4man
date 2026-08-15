@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/picks",
-      "schedule": "0 * * * *"
+      "schedule": "0 10 * * *"
     },
     {
       "path": "/api/cron/picks/rollover",
