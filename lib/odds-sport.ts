@@ -1,7 +1,6 @@
 /** The Odds API sport keys — https://the-odds-api.com/sports-odds-data/sport-keys */
 
 export const NFL_SPORT_KEY = 'americanfootball_nfl';
-export const NFL_PRESEASON_SPORT_KEY = 'americanfootball_nfl_preseason';
 
 export interface OddsSportConfig {
   key: string;
@@ -16,12 +15,6 @@ const SPORTS: Record<string, OddsSportConfig> = {
     label: 'NFL',
     espnLeague: 'nfl',
     useNflSundayLockRules: true,
-  },
-  [NFL_PRESEASON_SPORT_KEY]: {
-    key: NFL_PRESEASON_SPORT_KEY,
-    label: 'NFL Preseason',
-    espnLeague: 'nfl',
-    useNflSundayLockRules: false,
   },
   basketball_nba: {
     key: 'basketball_nba',

@@ -8,7 +8,7 @@
  * Get a free key (500 req/month) at https://the-odds-api.com
  */
 
-import { getOddsSportConfig, NFL_PRESEASON_SPORT_KEY } from '@/lib/odds-sport';
+import { getOddsSportConfig } from '@/lib/odds-sport';
 import {
   detectCurrentNflWeek,
   filterGamesForNflWeek,
@@ -57,10 +57,6 @@ function parseManual(body: unknown): boolean {
   return Boolean(body && typeof body === 'object' && (body as { manual?: unknown }).manual === true);
 }
 
-function parsePreseason(body: unknown): boolean {
-  return Boolean(body && typeof body === 'object' && (body as { preseason?: unknown }).preseason === true);
-}
-
 export async function POST(req: Request) {
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) {
@@ -69,18 +65,16 @@ export async function POST(req: Request) {
 
   let requestedWeek: number | undefined;
   let manual = false;
-  let preseason = false;
   try {
     const body = await req.json();
     requestedWeek = parseWeek(body);
     manual = parseManual(body);
-    preseason = parsePreseason(body);
   } catch {
     requestedWeek = undefined;
   }
 
   try {
-    const sport = getOddsSportConfig(preseason ? NFL_PRESEASON_SPORT_KEY : undefined);
+    const sport = getOddsSportConfig();
     const url = new URL(`https://api.the-odds-api.com/v4/sports/${sport.key}/odds/`);
     url.searchParams.set('apiKey',      apiKey);
     url.searchParams.set('regions',     'us');
@@ -100,7 +94,7 @@ export async function POST(req: Request) {
     const current = await getPicksState();
     const priorById = new Map((current?.games ?? []).map(g => [g.id, g]));
 
-    let fetchedGames: NFLGame[] = data
+    const fetchedGames: NFLGame[] = data
       .map((g): NFLGame => {
         let homeSpread: number | null = null;
         const book = g.bookmakers.find(b => b.key === 'draftkings');
@@ -134,18 +128,13 @@ export async function POST(req: Request) {
           completed:    prior?.completed,
         };
       })
-    if (preseason && fetchedGames.length) {
-      const firstKickoff = Math.min(...fetchedGames.map(game => new Date(game.commenceTime).getTime()));
-      const nextPreseasonWeek = firstKickoff + 7 * 24 * 60 * 60 * 1000;
-      fetchedGames = fetchedGames.filter(game => new Date(game.commenceTime).getTime() < nextPreseasonWeek);
-    }
     // The odds feed generally contains upcoming games only. Retain current-week
     // games that disappeared from that feed after kickoff so scores and picks
     // are never lost during an automatic line refresh.
     const fetchedIds = new Set(fetchedGames.map(g => g.id));
     const allGames = [
       ...fetchedGames,
-      ...(!preseason && current?.sportKey === sport.key ? current.games : [])
+      ...(current?.sportKey === sport.key ? current.games : [])
         .filter(g => !fetchedIds.has(g.id))
         .map(g => current?.submissions.some(s => s.picks.some(p => p.gameId === g.id))
           ? g
@@ -169,13 +158,11 @@ export async function POST(req: Request) {
       }
     }
 
-    const label = preseason
-      ? weekLabel(games, 'NFL Preseason Week 1')
-      : weekNumber
+    const label = weekNumber
       ? formatNflWeekLabel(games, sport.label, weekNumber)
       : weekLabel(games, sport.label);
 
-    const effectiveWeekNumber = preseason ? 1 : weekNumber;
+    const effectiveWeekNumber = weekNumber;
     const currentGameIds = new Set((current?.games ?? []).map(game => game.id));
     const sameSlate = current?.sportKey === sport.key
       && current?.weekNumber === effectiveWeekNumber

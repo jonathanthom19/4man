@@ -89,11 +89,11 @@ async function apiSubmitPicks(
   return data.state;
 }
 
-async function apiRefreshGames(week: number, preseason = false): Promise<PicksState> {
+async function apiRefreshGames(week: number): Promise<PicksState> {
   const res  = await fetch('/api/picks/refresh', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ week, manual: true, preseason }),
+    body:    JSON.stringify({ week, manual: true }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Refresh failed');
@@ -178,7 +178,6 @@ export default function PicksBoard({
   const [confirmClear,      setConfirmClear]      = useState(false);
   const [confirmArchive,    setConfirmArchive]    = useState(false);
   const [nflWeek,           setNflWeek]           = useState(1);
-  const [loadPreseason,     setLoadPreseason]     = useState(false);
   const [now,               setNow]               = useState(() => Date.now());
   const [editUser,          setEditUser]          = useState<string>(LEAGUE_MEMBERS[0]);
   const [editGameId,        setEditGameId]        = useState('');
@@ -293,7 +292,7 @@ export default function PicksBoard({
     setLoading(true);
     setError(null);
     try {
-      const next = await apiRefreshGames(nflWeek, loadPreseason);
+      const next = await apiRefreshGames(nflWeek);
       setPicksState(next);
       if (next.weekNumber) setNflWeek(next.weekNumber);
       setSuccess(`${next.weekLabel} — ${next.games.length} games with DraftKings spreads.`);
@@ -560,14 +559,10 @@ export default function PicksBoard({
                   <label className="flex items-center justify-between gap-2 text-xs text-slate-500">
                     <span>NFL slate to load</span>
                     <select
-                      value={loadPreseason ? 'preseason-1' : String(nflWeek)}
-                      onChange={e => {
-                        if (e.target.value === 'preseason-1') setLoadPreseason(true);
-                        else { setLoadPreseason(false); setNflWeek(Number(e.target.value)); }
-                      }}
+                      value={String(nflWeek)}
+                      onChange={e => setNflWeek(Number(e.target.value))}
                       className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-slate-800 dark:text-slate-100 font-semibold"
                     >
-                      <option value="preseason-1">Preseason Week 1</option>
                       {Array.from({ length: 20 }, (_, i) => i + 1).map(w => (
                         <option key={w} value={w}>{w === 19 ? 'Wild Card' : w === 20 ? 'Divisional' : `Week ${w}`}</option>
                       ))}
