@@ -77,7 +77,7 @@ async function apiSubmitPicks(
   userName: string,
   picks: WeeklyPick[],
   lockOfWeekGameId?: string,
-): Promise<PicksState> {
+): Promise<void> {
   const res  = await fetch('/api/picks', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -86,10 +86,9 @@ async function apiSubmitPicks(
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Submit failed');
-  return data.state;
 }
 
-async function apiRefreshGames(week: number): Promise<PicksState> {
+async function apiRefreshGames(week: number): Promise<{ weekLabel: string; weekNumber?: number; gameCount: number }> {
   const res  = await fetch('/api/picks/refresh', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -97,17 +96,17 @@ async function apiRefreshGames(week: number): Promise<PicksState> {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Refresh failed');
-  return data.state;
+  return data;
 }
 
-async function apiFetchScores(manual = true): Promise<{ state: PicksState; cached: boolean }> {
+async function apiFetchScores(manual = true): Promise<{ completedCount: number; cached: boolean }> {
   const res  = await fetch(`/api/picks/scores${manual ? '?manual=1' : ''}`, { method: 'POST' });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Scores fetch failed');
-  return { state: data.state, cached: Boolean(data.cached) };
+  return { completedCount: data.completedCount ?? 0, cached: Boolean(data.cached) };
 }
 
-async function apiGrade(): Promise<{ state: PicksState; season: PicksSeasonState }> {
+async function apiGrade(): Promise<{ gradedAt?: number; season: PicksSeasonState }> {
   const res  = await fetch('/api/picks/grade', { method: 'POST' });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Grade failed');
@@ -121,11 +120,10 @@ async function apiArchive(): Promise<{ state: PicksState; archived: ArchivedPick
   return data;
 }
 
-async function apiClearPicks(): Promise<PicksState | null> {
+async function apiClearPicks(): Promise<void> {
   const res  = await fetch('/api/picks', { method: 'DELETE' });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Clear failed');
-  return data.state ?? null;
 }
 
 async function apiAdminEditPick(adminName: string, userName: string, gameId: string, selectedTeam: string, setAsLock: boolean, reason: string): Promise<void> {
@@ -142,11 +140,10 @@ async function apiAdminUnlockLine(adminName: string, gameId: string): Promise<vo
   if (!res.ok) throw new Error((await res.json()).error ?? 'Unlock failed');
 }
 
-async function apiSeedGames(): Promise<PicksState> {
+async function apiSeedGames(): Promise<void> {
   const res  = await fetch('/api/picks/seed', { method: 'POST' });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Seed failed');
-  return data.state;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -239,12 +236,8 @@ export default function PicksBoard({
     const refreshVisibleState = async () => {
       try {
         const scoreResult = await apiFetchScores(false);
-        if (!scoreResult.cached) {
-          const graded = await apiGrade();
-          setPicksState(graded.state);
-        } else {
-          setPicksState(scoreResult.state);
-        }
+        if (!scoreResult.cached) await apiGrade();
+        setPicksState(await apiFetchPicks(myName));
       } catch {
         // Keep the last good state; the normal load flow displays request errors.
       }
@@ -276,11 +269,10 @@ export default function PicksBoard({
         gameId, selectedTeam,
         lineAtPick: picksState.games.find(g => g.id === gameId)?.homeSpread ?? null,
       }));
-      const next = await apiSubmitPicks(myName, picks, lockOfWeekGameId);
-      setPicksState(next);
+      await apiSubmitPicks(myName, picks, lockOfWeekGameId);
       setSuccess('Picks submitted!');
-      setScreen('view');
       await load();
+      setScreen('view');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Submit failed');
     } finally {
@@ -293,9 +285,9 @@ export default function PicksBoard({
     setError(null);
     try {
       const next = await apiRefreshGames(nflWeek);
-      setPicksState(next);
+      setPicksState(await apiFetchPicks(myName));
       if (next.weekNumber) setNflWeek(next.weekNumber);
-      setSuccess(`${next.weekLabel} — ${next.games.length} games with DraftKings spreads.`);
+      setSuccess(`${next.weekLabel} — ${next.gameCount} games with DraftKings spreads.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Refresh failed');
     } finally {
@@ -307,10 +299,10 @@ export default function PicksBoard({
     setLoading(true);
     setError(null);
     try {
-      const { state: next } = await apiFetchScores();
-      setPicksState(next);
-      const n = next.games.filter(g => g.completed).length;
-      setSuccess(`Scores updated — ${n} / ${next.games.length} games final.`);
+      const { completedCount } = await apiFetchScores();
+      const masked = await apiFetchPicks(myName);
+      setPicksState(masked);
+      setSuccess(`Scores updated — ${completedCount} / ${masked?.games.length ?? 0} games final.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Scores failed');
     } finally {
@@ -322,8 +314,8 @@ export default function PicksBoard({
     setLoading(true);
     setError(null);
     try {
-      const { state, season } = await apiGrade();
-      setPicksState(state);
+      const { season } = await apiGrade();
+      setPicksState(await apiFetchPicks(myName));
       setSeasonState(season);
       setSuccess('Week graded — pool totals updated (not archived yet).');
     } catch (e) {
@@ -358,8 +350,8 @@ export default function PicksBoard({
     setLoading(true);
     setError(null);
     try {
-      const next = await apiClearPicks();
-      setPicksState(next);
+      await apiClearPicks();
+      setPicksState(await apiFetchPicks(myName));
       setDraftPicks({});
       setLockOfWeekGameId(undefined);
       setSuccess('Submissions cleared (games kept).');
@@ -374,8 +366,8 @@ export default function PicksBoard({
     setLoading(true);
     setError(null);
     try {
-      const next = await apiSeedGames();
-      setPicksState(next);
+      await apiSeedGames();
+      setPicksState(await apiFetchPicks(myName));
       setDraftPicks({});
       setLockOfWeekGameId(undefined);
       setSuccess('Test games loaded.');

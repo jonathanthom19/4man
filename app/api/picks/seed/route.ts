@@ -87,7 +87,7 @@ export async function POST() {
     };
 
     await setPicksState(next);
-    return Response.json({ state: next });
+    return Response.json({ ok: true, weekLabel: next.weekLabel, gameCount: next.games.length });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }

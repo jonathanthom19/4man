@@ -18,7 +18,7 @@ export async function POST() {
 
     await setPicksState(graded);
 
-    return Response.json({ state: graded, season: seasonState });
+    return Response.json({ gradedAt: graded.gradedAt, season: seasonState });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }

@@ -42,7 +42,6 @@ export async function POST(req?: Request) {
     const manual = req ? new URL(req.url).searchParams.get('manual') === '1' : false;
     if (!manual && activeState.scoresRefreshedAt && Date.now() - activeState.scoresRefreshedAt < SCORE_REFRESH_INTERVAL_MS) {
       return Response.json({
-        state: activeState,
         completedCount: activeState.games.filter(game => game.completed).length,
         cached: true,
       });
@@ -88,7 +87,6 @@ export async function POST(req?: Request) {
     const completedCount = games.filter(g => g.completed).length;
 
     return Response.json({
-      state: next,
       completedCount,
       cached: false,
       remaining: res.headers.get('x-requests-remaining'),

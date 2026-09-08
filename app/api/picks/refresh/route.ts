@@ -198,10 +198,11 @@ export async function POST(req: Request) {
 
     await setPicksState(next);
     return Response.json({
-      state: next,
+      weekLabel: next.weekLabel,
+      weekNumber: next.weekNumber,
+      gameCount: next.games.length,
       remaining: res.headers.get('x-requests-remaining'),
       sport: sport.label,
-      weekNumber,
       totalGamesFromApi: allGames.length,
     });
     });

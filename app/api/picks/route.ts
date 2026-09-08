@@ -136,7 +136,7 @@ export async function POST(req: Request) {
 
     const next = { ...state, games, submissions };
     await setPicksState(next);
-    return Response.json({ state: next });
+    return Response.json({ ok: true });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
@@ -206,7 +206,7 @@ export async function PUT(req: Request) {
     };
     const regraded = gradePicksState(next);
     await setPicksState(regraded);
-    return Response.json({ state: regraded });
+    return Response.json({ ok: true });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
@@ -238,7 +238,7 @@ export async function PATCH(req: Request) {
     });
     const next = gradePicksState({ ...state, games });
     await setPicksState(next);
-    return Response.json({ state: next });
+    return Response.json({ ok: true });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
@@ -257,7 +257,7 @@ export async function DELETE() {
       games: state.games.map(game => ({ ...game, lineLockedAt: undefined })),
     };
     await setPicksState(next);
-    return Response.json({ ok: true, state: next });
+    return Response.json({ ok: true });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
