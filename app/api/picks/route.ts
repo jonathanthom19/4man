@@ -87,7 +87,8 @@ export async function POST(req: Request) {
         // Game is locked — preserve the existing pick regardless of what was submitted
         return { gameId: game.id, selectedTeam: existingPick };
       }
-      if (submitted && !locked && [game.homeTeam, game.awayTeam].includes(submitted.selectedTeam)) {
+      if (submitted && !locked && [game.homeTeam, game.awayTeam].includes(submitted.selectedTeam)
+          && (!game.lockOnly || lockOfWeekGameId === game.id)) {
         return { gameId: game.id, selectedTeam: submitted.selectedTeam, lineAtPick: game.homeSpread };
       }
       // Not submitted yet and not locked — omit (partial picks allowed)
@@ -96,6 +97,9 @@ export async function POST(req: Request) {
 
     const requestedLockGame = state.games.find(g => g.id === lockOfWeekGameId);
     const existingLockGame = state.games.find(g => g.id === existing?.lockOfWeekGameId);
+    if (lockOfWeekGameId && !requestedLockGame) {
+      return Response.json({ error: 'Lock of the Week game is not in the active slate' }, { status: 400 });
+    }
     const canChangeLock =
       (!requestedLockGame || !isLocked(requestedLockGame.lockTime)) &&
       (!existingLockGame || !isLocked(existingLockGame.lockTime));

@@ -41,6 +41,7 @@ export default function PicksWeekTable({
   balancesAfterWeek,
   footer,
 }: PicksWeekTableProps) {
+  const pickGames = games.filter(game => !game.lockOnly);
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div className="flex-1 overflow-auto">
@@ -49,7 +50,7 @@ export default function PicksWeekTable({
             <tr className="bg-slate-800 text-white sticky top-0 z-10">
               <th className="px-3 py-2 text-xs sticky left-0 bg-slate-800 z-20">Name</th>
               <th className="px-3 py-2 text-xs">Lock</th>
-              {games.map(game => (
+              {pickGames.map(game => (
                 <th
                   key={game.id}
                   className="px-3 py-2 text-left align-bottom"
@@ -88,7 +89,7 @@ export default function PicksWeekTable({
                   <td className="px-3 py-2 text-xs text-amber-600 whitespace-nowrap">
                     {lockPick ? mascot(lockPick.selectedTeam) : '–'}
                   </td>
-                  {games.map(game => {
+                  {pickGames.map(game => {
                     const p = pickMap.get(game.id);
                     return (
                       <td key={game.id} className="px-3 py-2 whitespace-nowrap">

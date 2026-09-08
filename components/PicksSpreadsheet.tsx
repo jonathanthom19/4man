@@ -59,6 +59,7 @@ export default function PicksSpreadsheet({
   myName,
   archive,
 }: SpreadsheetProps) {
+  const pickGames = games.filter(game => !game.lockOnly);
   const balances = displayBalances(season, weeklyPoolDeltas, archive);
   const lockRecords = displayLockRecords(season, archive);
   const deltas = archive?.weeklyPoolDeltas ?? weeklyPoolDeltas;
@@ -122,7 +123,7 @@ export default function PicksSpreadsheet({
               <th className="px-4 py-3 font-semibold text-xs whitespace-nowrap sticky left-0 bg-slate-800 z-20">Name</th>
               <th className="px-3 py-3 font-semibold text-xs whitespace-nowrap bg-slate-800 border-r border-slate-700">$</th>
               <th className="px-3 py-3 font-semibold text-xs whitespace-nowrap bg-slate-800 border-r border-slate-700">🔒</th>
-              {games.map(game => (
+              {pickGames.map(game => (
                 <th
                   key={game.id}
                   aria-label={gameColumnHeader(game)}
@@ -147,7 +148,7 @@ export default function PicksSpreadsheet({
           <tbody>
             {allSubs.length === 0 ? (
               <tr>
-                <td colSpan={3 + games.length} className="px-4 py-8 text-center text-slate-400 text-sm">
+                <td colSpan={3 + pickGames.length} className="px-4 py-8 text-center text-slate-400 text-sm">
                   No picks submitted yet.
                 </td>
               </tr>
@@ -176,7 +177,7 @@ export default function PicksSpreadsheet({
                     <td className="px-3 py-2.5 text-xs text-amber-700 dark:text-amber-400 whitespace-nowrap border-r border-slate-100 dark:border-slate-800">
                       {formatLockRecord(lockRecords[sub.userName] ?? { wins: 0, losses: 0, pushes: 0 })}
                     </td>
-                    {games.map(game => {
+                    {pickGames.map(game => {
                       const picked = pickMap[game.id];
                       const isLock = sub.lockOfWeekGameId === game.id;
                       const glyph = resultGlyph(picked?.result);

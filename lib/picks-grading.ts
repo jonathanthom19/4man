@@ -79,6 +79,7 @@ export function aggregatePoolDeltas(
   const totals: Record<string, number> = Object.fromEntries(LEAGUE_MEMBERS.map(m => [m, 0]));
 
   for (const game of games) {
+    if (game.lockOnly) continue;
     const picksByUser: Record<string, string | undefined> = {};
     for (const sub of submissions) {
       const pick = sub.picks.find(p => p.gameId === game.id);
@@ -105,10 +106,6 @@ export function computeLockResults(
     const game = games.find(g => g.id === sub.lockOfWeekGameId);
     const pick = sub.picks.find(p => p.gameId === sub.lockOfWeekGameId);
     if (!game || !pick) continue;
-    const allSubmitted = LEAGUE_MEMBERS.every(user =>
-      submissions.find(s => s.userName === user)?.picks.some(p => p.gameId === game.id),
-    );
-    if (!allSubmitted) continue;
     results[sub.userName] = gradePick(pick.selectedTeam, game);
   }
   return results;

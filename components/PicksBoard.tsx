@@ -265,10 +265,15 @@ export default function PicksBoard({
     setLoading(true);
     setError(null);
     try {
-      const picks: WeeklyPick[] = Object.entries(draftPicks).map(([gameId, selectedTeam]) => ({
-        gameId, selectedTeam,
-        lineAtPick: picksState.games.find(g => g.id === gameId)?.homeSpread ?? null,
-      }));
+      const picks: WeeklyPick[] = Object.entries(draftPicks)
+        .filter(([gameId]) => {
+          const game = picksState.games.find(g => g.id === gameId);
+          return game && (!game.lockOnly || gameId === lockOfWeekGameId);
+        })
+        .map(([gameId, selectedTeam]) => ({
+          gameId, selectedTeam,
+          lineAtPick: picksState.games.find(g => g.id === gameId)?.homeSpread ?? null,
+        }));
       await apiSubmitPicks(myName, picks, lockOfWeekGameId);
       setSuccess('Picks submitted!');
       await load();
@@ -395,9 +400,14 @@ export default function PicksBoard({
   const mySubmission: UserPicksSubmission | undefined =
     picksState?.submissions.find(s => s.userName === myName);
 
+  const pickGames          = picksState?.games.filter(game => !game.lockOnly) ?? [];
+  const lockOnlyGames      = picksState?.games.filter(game => game.lockOnly) ?? [];
   const lockedGames       = picksState?.games.filter(g => now >= g.lockTime) ?? [];
   const allLocked         = picksState ? lockedGames.length === picksState.games.length : false;
-  const completedGames    = picksState?.games.filter(g => g.completed).length ?? 0;
+  const completedGames    = pickGames.filter(g => g.completed).length;
+  const savedPoolPicks    = mySubmission?.picks.filter(pick =>
+    pickGames.some(game => game.id === pick.gameId),
+  ).length ?? 0;
 
   return (
     <div className={dark ? 'dark' : ''}>
@@ -458,7 +468,7 @@ export default function PicksBoard({
                 <div className="text-center space-y-1 w-full">
                   <h2 className="text-xl font-black text-slate-900 dark:text-slate-100">{picksState.weekLabel}</h2>
                   <p className="text-slate-500 dark:text-slate-400 text-sm">
-                    {picksState.games.length} games · {picksState.submissions.length} / {LEAGUE_MEMBERS.length} submitted
+                    {pickGames.length} games · {picksState.submissions.length} / {LEAGUE_MEMBERS.length} submitted
                     {completedGames > 0 && ` · ${completedGames} final`}
                   </p>
                   {mySubmission && (
@@ -467,7 +477,7 @@ export default function PicksBoard({
                     </p>
                   )}
                   <p className="text-xs text-slate-500">
-                    {mySubmission?.picks.length ?? 0} of {picksState.games.length} picks saved · {mySubmission?.lockOfWeekGameId ? 'Lock selected' : 'Lock missing'}
+                    {savedPoolPicks} of {pickGames.length} picks saved · {mySubmission?.lockOfWeekGameId ? 'Lock selected' : 'Lock missing'}
                   </p>
                   {picksState.gradedAt && picksState.lastWeeklyPoolDeltas && (
                     <p className="text-xs text-slate-500">
@@ -656,7 +666,7 @@ export default function PicksBoard({
               )}
 
               <div className="space-y-3">
-                {picksState.games.map(game => {
+                {pickGames.map(game => {
                   const selected  = draftPicks[game.id];
                   const locked    = now >= game.lockTime;
                   const isLock    = lockOfWeekGameId === game.id;
@@ -730,7 +740,14 @@ export default function PicksBoard({
                       {selected && !locked && (
                         <button
                           type="button"
-                          onClick={() => setLockOfWeekGameId(game.id)}
+                          onClick={() => {
+                            setLockOfWeekGameId(game.id);
+                            setDraftPicks(previous => Object.fromEntries(
+                              Object.entries(previous).filter(([gameId]) =>
+                                !picksState.games.find(candidate => candidate.id === gameId)?.lockOnly,
+                              ),
+                            ));
+                          }}
                           className={`mt-3 w-full py-2 rounded-lg text-xs font-bold border transition-colors ${
                             isLock
                               ? 'bg-amber-500 text-white border-amber-600'
@@ -744,6 +761,63 @@ export default function PicksBoard({
                   );
                 })}
               </div>
+
+              {lockOnlyGames.length > 0 && (
+                <section className="space-y-3 border-t border-slate-200 dark:border-slate-800 pt-5">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">Lock-only games</h3>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                      Giants and Jets games do not count as weekly picks, but either side can be your Lock of the Week.
+                    </p>
+                  </div>
+                  {lockOnlyGames.map(game => {
+                    const selected = draftPicks[game.id];
+                    const locked = now >= game.lockTime;
+                    const isLock = lockOfWeekGameId === game.id;
+                    return (
+                      <div key={game.id} className={`rounded-2xl border p-4 ${locked ? 'opacity-70 bg-slate-50 dark:bg-slate-900/40' : 'bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900'}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs text-slate-600 dark:text-slate-400">{gameTimeLabel(game)}</p>
+                            <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-1">{matchupLine(game)}</p>
+                          </div>
+                          {locked && <span className="text-[10px] font-bold text-red-500">LOCKED</span>}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 mt-3">
+                          {([game.awayTeam, game.homeTeam] as const).map(team => {
+                            const isSelected = isLock && selected === team;
+                            return (
+                              <button
+                                key={team}
+                                type="button"
+                                disabled={locked}
+                                onClick={() => {
+                                  setDraftPicks(previous => {
+                                    const withoutLockOnly = Object.fromEntries(
+                                      Object.entries(previous).filter(([gameId]) =>
+                                        !picksState.games.find(candidate => candidate.id === gameId)?.lockOnly,
+                                      ),
+                                    );
+                                    return isSelected ? withoutLockOnly : { ...withoutLockOnly, [game.id]: team };
+                                  });
+                                  setLockOfWeekGameId(isSelected ? undefined : game.id);
+                                }}
+                                className={`rounded-xl px-3 py-3 text-xs font-bold border disabled:cursor-not-allowed ${
+                                  isSelected
+                                    ? 'bg-amber-500 border-amber-600 text-white'
+                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100'
+                                }`}
+                              >
+                                {isSelected ? '🔒 ' : ''}{mascot(team)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </section>
+              )}
 
               {!allLocked && (
                 <button

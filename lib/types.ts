@@ -66,6 +66,8 @@ export interface NFLGame {
   homeScore?: number | null;
   awayScore?: number | null;
   completed?: boolean;
+  /** Excluded from the weekly pool, but eligible as a Lock of the Week. */
+  lockOnly?: boolean;
 }
 
 export interface WeeklyPick {

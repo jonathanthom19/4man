@@ -10,7 +10,11 @@ export interface WeekIssue {
 /** A week cannot enter the season ledger until every result and entry is final. */
 export function getWeekIssues(state: PicksState): WeekIssue[] {
   const issues: WeekIssue[] = [];
-  for (const game of state.games) {
+  const requiredGameIds = new Set([
+    ...state.games.filter(game => !game.lockOnly).map(game => game.id),
+    ...state.submissions.flatMap(submission => submission.lockOfWeekGameId ? [submission.lockOfWeekGameId] : []),
+  ]);
+  for (const game of state.games.filter(game => requiredGameIds.has(game.id))) {
     if (!game.completed || game.homeScore == null || game.awayScore == null) {
       issues.push({ gameId: game.id, message: `${game.awayTeam} at ${game.homeTeam} is not final` });
     }
@@ -21,7 +25,7 @@ export function getWeekIssues(state: PicksState): WeekIssue[] {
       issues.push({ userName, message: `${userName} has not submitted picks` });
       continue;
     }
-    for (const game of state.games) {
+    for (const game of state.games.filter(game => !game.lockOnly)) {
       if (!submission.picks.some(p => p.gameId === game.id)) {
         issues.push({ userName, gameId: game.id, message: `${userName} is missing ${game.awayTeam} at ${game.homeTeam}` });
       }

@@ -101,7 +101,6 @@ export async function POST(req: Request) {
     const priorById = new Map((current?.games ?? []).map(g => [g.id, g]));
 
     const fetchedGames: NFLGame[] = data
-      .filter(g => !includesExcludedTeam(g.home_team, g.away_team))
       .map((g): NFLGame => {
         let homeSpread: number | null = null;
         const book = g.bookmakers.find(b => b.key === 'draftkings');
@@ -133,6 +132,7 @@ export async function POST(req: Request) {
           homeScore:    prior?.homeScore,
           awayScore:    prior?.awayScore,
           completed:    prior?.completed,
+          lockOnly:     includesExcludedTeam(g.home_team, g.away_team) || undefined,
         };
       })
     // The odds feed generally contains upcoming games only. Retain current-week
@@ -142,7 +142,7 @@ export async function POST(req: Request) {
     const allGames = [
       ...fetchedGames,
       ...(current?.sportKey === sport.key ? current.games : [])
-        .filter(g => !includesExcludedTeam(g.homeTeam, g.awayTeam) && !fetchedIds.has(g.id))
+        .filter(g => !fetchedIds.has(g.id))
         .map(g => current?.submissions.some(s => s.picks.some(p => p.gameId === g.id))
           ? g
           : { ...g, lineLockedAt: undefined }),
@@ -200,7 +200,7 @@ export async function POST(req: Request) {
     return Response.json({
       weekLabel: next.weekLabel,
       weekNumber: next.weekNumber,
-      gameCount: next.games.length,
+      gameCount: next.games.filter(game => !game.lockOnly).length,
       remaining: res.headers.get('x-requests-remaining'),
       sport: sport.label,
       totalGamesFromApi: allGames.length,
