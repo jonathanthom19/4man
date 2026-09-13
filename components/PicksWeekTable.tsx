@@ -1,6 +1,6 @@
 'use client';
 
-import { LEAGUE_MEMBERS } from '@/lib/league-members';
+import { PICKS_DISPLAY_ORDER } from '@/lib/league-members';
 import {
   gameColumnDay,
   gameColumnHeader,
@@ -69,7 +69,7 @@ export default function PicksWeekTable({
             </tr>
           </thead>
           <tbody>
-            {LEAGUE_MEMBERS.map((name, i) => {
+            {PICKS_DISPLAY_ORDER.map((name, i) => {
               const sub = submissions.find(s => s.userName === name);
               const pickMap = new Map(sub?.picks.map(p => [p.gameId, p]) ?? []);
               const lockGame = games.find(g => g.id === sub?.lockOfWeekGameId);
@@ -130,9 +130,7 @@ export default function PicksWeekTable({
             Season balance after {weekLabel}
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-            {[...LEAGUE_MEMBERS]
-              .sort((a, b) => (balancesAfterWeek[b] ?? 0) - (balancesAfterWeek[a] ?? 0))
-              .map(name => (
+            {PICKS_DISPLAY_ORDER.map(name => (
                 <span key={name} className={name === myName ? 'font-bold text-amber-600' : 'text-slate-600 dark:text-slate-300'}>
                   {name}: {(balancesAfterWeek[name] ?? 0) >= 0 ? '+' : ''}{balancesAfterWeek[name] ?? 0}$
                 </span>

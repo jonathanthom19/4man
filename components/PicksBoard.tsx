@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { espnTeamLogoUrl } from '@/lib/odds-sport';
-import { LEAGUE_MEMBERS, isLeagueAdmin } from '@/lib/league-members';
+import { LEAGUE_MEMBERS, PICKS_DISPLAY_ORDER, isLeagueAdmin } from '@/lib/league-members';
 import { matchupLine, mascot } from '@/lib/picks-display';
 import { formatHomeSpread } from '@/lib/picks-line-history';
 import PicksWeekTable from './PicksWeekTable';
@@ -523,9 +523,7 @@ export default function PicksBoard({
                       </tr>
                     </thead>
                     <tbody>
-                      {[...LEAGUE_MEMBERS]
-                        .sort((a, b) => ((seasonState.balances[b] ?? 0) + (picksState?.lastWeeklyPoolDeltas?.[b] ?? 0)) - ((seasonState.balances[a] ?? 0) + (picksState?.lastWeeklyPoolDeltas?.[a] ?? 0)))
-                        .map(name => (
+                      {PICKS_DISPLAY_ORDER.map(name => (
                           <tr key={name} className={`border-b border-slate-50 dark:border-slate-800/50 ${name === myName ? 'bg-amber-50/50 dark:bg-amber-950/20' : ''}`}>
                             <td className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-100">{name}</td>
                             <td className={`px-4 py-2 font-mono ${(picksState?.lastWeeklyPoolDeltas?.[name] ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>

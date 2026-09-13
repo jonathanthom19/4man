@@ -1,6 +1,6 @@
 'use client';
 
-import { LEAGUE_MEMBERS } from '@/lib/league-members';
+import { LEAGUE_MEMBERS, PICKS_DISPLAY_ORDER } from '@/lib/league-members';
 import { formatLockRecord } from '@/lib/picks-grading';
 import {
   finalScoreLine,
@@ -64,7 +64,7 @@ export default function PicksSpreadsheet({
   const lockRecords = displayLockRecords(season, archive);
   const deltas = archive?.weeklyPoolDeltas ?? weeklyPoolDeltas;
 
-  const orderedSubs = LEAGUE_MEMBERS.map(name => {
+  const orderedSubs = PICKS_DISPLAY_ORDER.map(name => {
     return submissions.find(s => s.userName === name) ?? null;
   }).filter((s): s is UserPicksSubmission => s !== null);
 
@@ -78,7 +78,7 @@ export default function PicksSpreadsheet({
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">Season balance</p>
           <div className="grid grid-cols-2 gap-2">
-            {LEAGUE_MEMBERS.map(name => {
+            {PICKS_DISPLAY_ORDER.map(name => {
               const bal = balances[name] ?? 0;
               const delta = deltas?.[name];
               return (
@@ -102,7 +102,7 @@ export default function PicksSpreadsheet({
             Lock of the Week (season)
           </p>
           <div className="grid grid-cols-2 gap-2">
-            {LEAGUE_MEMBERS.map(name => {
+            {PICKS_DISPLAY_ORDER.map(name => {
               const rec = lockRecords[name] ?? { wins: 0, losses: 0, pushes: 0 };
               return (
                 <div key={name} className="text-xs text-slate-700 dark:text-slate-200">
