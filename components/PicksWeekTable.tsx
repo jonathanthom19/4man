@@ -18,6 +18,13 @@ function resultClass(result?: string): string {
   return '';
 }
 
+function lockResultClass(result?: string): string {
+  if (result === 'win') return 'text-emerald-700 dark:text-emerald-400 font-bold';
+  if (result === 'loss') return 'text-red-700 dark:text-red-400 font-bold';
+  if (result === 'push') return 'text-amber-700 dark:text-amber-400 font-bold';
+  return 'text-amber-600 dark:text-amber-400';
+}
+
 export interface PicksWeekTableProps {
   weekLabel: string;
   games: NFLGame[];
@@ -86,8 +93,17 @@ export default function PicksWeekTable({
                   <td className="px-3 py-2 font-semibold sticky left-0 bg-inherit whitespace-nowrap text-slate-800 dark:text-slate-100">
                     {name}
                   </td>
-                  <td className="px-3 py-2 text-xs text-amber-600 whitespace-nowrap">
-                    {lockPick ? mascot(lockPick.selectedTeam) : '–'}
+                  <td className={`px-3 py-2 text-xs whitespace-nowrap ${lockResultClass(lockPick?.result)}`}>
+                    {lockPick ? (
+                      <span>
+                        {mascot(lockPick.selectedTeam)}
+                        {lockPick.result && lockPick.result !== 'pending' && (
+                          <span className="ml-1" aria-label={`Lock ${lockPick.result}`}>
+                            {resultGlyph(lockPick.result)}
+                          </span>
+                        )}
+                      </span>
+                    ) : '–'}
                   </td>
                   {pickGames.map(game => {
                     const p = pickMap.get(game.id);
