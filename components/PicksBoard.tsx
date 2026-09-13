@@ -42,6 +42,14 @@ function lineHistorySourceLabel(source: LineHistoryEntry['source']): string {
   return 'Line move';
 }
 
+function automaticRefreshErrorMessage(error: unknown): string {
+  const detail = error instanceof Error ? error.message : 'Unknown refresh error';
+  if (detail.includes('OUT_OF_USAGE_CREDITS') || detail.toLowerCase().includes('quota')) {
+    return 'Automatic odds and score updates are paused because The Odds API quota is exhausted. Replace or upgrade the API key.';
+  }
+  return `Automatic odds or score refresh failed: ${detail}`;
+}
+
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
 async function apiFetchPicks(viewer: string): Promise<PicksState | null> {
@@ -88,11 +96,11 @@ async function apiSubmitPicks(
   if (!res.ok) throw new Error(data.error ?? 'Submit failed');
 }
 
-async function apiRefreshGames(week: number): Promise<{ weekLabel: string; weekNumber?: number; gameCount: number }> {
+async function apiRefreshGames(week?: number, manual = true): Promise<{ weekLabel: string; weekNumber?: number; gameCount: number; cached?: boolean }> {
   const res  = await fetch('/api/picks/refresh', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ week, manual: true }),
+    body:    JSON.stringify({ ...(week ? { week } : {}), manual }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? 'Refresh failed');
@@ -171,6 +179,7 @@ export default function PicksBoard({
   const [lockOfWeekGameId,  setLockOfWeekGameId]  = useState<string | undefined>();
   const [loading,           setLoading]           = useState(false);
   const [error,             setError]             = useState<string | null>(null);
+  const [refreshError,      setRefreshError]      = useState<string | null>(null);
   const [success,           setSuccess]           = useState<string | null>(null);
   const [confirmClear,      setConfirmClear]      = useState(false);
   const [confirmArchive,    setConfirmArchive]    = useState(false);
@@ -235,11 +244,15 @@ export default function PicksBoard({
     if (screen === 'make') return;
     const refreshVisibleState = async () => {
       try {
+        await apiRefreshGames(undefined, false);
         const scoreResult = await apiFetchScores(false);
         if (!scoreResult.cached) await apiGrade();
         setPicksState(await apiFetchPicks(myName));
-      } catch {
-        // Keep the last good state; the normal load flow displays request errors.
+        if (admin) setRefreshError(null);
+      } catch (e) {
+        // Members keep the last good state. Admins also get an actionable alert
+        // because background failures would otherwise be invisible.
+        if (admin) setRefreshError(automaticRefreshErrorMessage(e));
       }
     };
     void refreshVisibleState();
@@ -252,7 +265,7 @@ export default function PicksBoard({
       clearInterval(id);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [myName, screen]);
+  }, [myName, screen, admin]);
 
   const handleSubmit = async () => {
     if (!picksState) return;
@@ -441,6 +454,12 @@ export default function PicksBoard({
           <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 bg-red-600 text-white text-sm font-medium">
             <span className="flex-1">{error}</span>
             <button onClick={() => setError(null)} className="text-white/70 hover:text-white text-lg leading-none">✕</button>
+          </div>
+        )}
+        {admin && refreshError && (
+          <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 bg-amber-600 text-white text-sm font-medium" role="alert">
+            <span className="flex-1">⚠ {refreshError}</span>
+            <button onClick={() => setRefreshError(null)} className="text-white/70 hover:text-white text-lg leading-none" aria-label="Dismiss refresh warning">✕</button>
           </div>
         )}
         {success && (

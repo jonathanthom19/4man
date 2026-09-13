@@ -4,6 +4,7 @@
 
 import { getOddsSportConfig } from '@/lib/odds-sport';
 import { getPicksState, setPicksState } from '@/lib/picks-store';
+import { shouldRefreshScores } from '@/lib/picks-refresh-policy';
 import type { NFLGame } from '@/lib/types';
 import { withStateLock } from '@/lib/state-lock';
 
@@ -24,8 +25,6 @@ function parseScore(scores: ScoresTeam[] | null, teamName: string): number | nul
   return Number.isNaN(n) ? null : n;
 }
 
-const SCORE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
-
 export async function POST(req?: Request) {
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) {
@@ -40,12 +39,16 @@ export async function POST(req?: Request) {
     }
 
     const manual = req ? new URL(req.url).searchParams.get('manual') === '1' : false;
-    if (!manual && activeState.scoresRefreshedAt && Date.now() - activeState.scoresRefreshedAt < SCORE_REFRESH_INTERVAL_MS) {
+    if (!manual && !shouldRefreshScores(activeState)) {
       return Response.json({
         completedCount: activeState.games.filter(game => game.completed).length,
         cached: true,
       });
     }
+
+    // Record attempts before calling upstream. A quota/network failure must not
+    // let several open browser tabs retry and spend or hammer the API together.
+    await setPicksState({ ...activeState, scoresRefreshAttemptedAt: Date.now() });
 
     const sport = getOddsSportConfig(activeState.sportKey);
     const url = new URL(`https://api.the-odds-api.com/v4/sports/${sport.key}/scores/`);
@@ -82,7 +85,12 @@ export async function POST(req?: Request) {
       };
     });
 
-    const next = { ...state, games, scoresRefreshedAt: Date.now() };
+    const next = {
+      ...state,
+      games,
+      scoresRefreshedAt: Date.now(),
+      scoresRefreshAttemptedAt: Date.now(),
+    };
     await setPicksState(next);
     const completedCount = games.filter(g => g.completed).length;
 

@@ -18,6 +18,7 @@ import {
 import { seasonFromGames } from '@/lib/picks-grading';
 import { appendLineHistory } from '@/lib/picks-line-history';
 import { getPicksState, setPicksState } from '@/lib/picks-store';
+import { shouldRefreshLines } from '@/lib/picks-refresh-policy';
 import { computeLockTime } from '@/lib/picks-utils';
 import type { NFLGame, PicksState } from '@/lib/types';
 import { withStateLock } from '@/lib/state-lock';
@@ -79,7 +80,22 @@ export async function POST(req: Request) {
     requestedWeek = undefined;
   }
 
+  return withStateLock('picks-lines-refresh', async () => {
   try {
+    const beforeRefresh = await getPicksState();
+    if (!manual && beforeRefresh?.games.length && !shouldRefreshLines(beforeRefresh)) {
+      return Response.json({
+        weekLabel: beforeRefresh.weekLabel,
+        weekNumber: beforeRefresh.weekNumber,
+        gameCount: beforeRefresh.games.filter(game => !game.lockOnly).length,
+        cached: true,
+      });
+    }
+
+    if (beforeRefresh) {
+      await setPicksState({ ...beforeRefresh, gamesRefreshAttemptedAt: Date.now() });
+    }
+
     const sport = getOddsSportConfig();
     const url = new URL(`https://api.the-odds-api.com/v4/sports/${sport.key}/odds/`);
     url.searchParams.set('apiKey',      apiKey);
@@ -186,7 +202,9 @@ export async function POST(req: Request) {
       weekNumber: effectiveWeekNumber,
       games,
       gamesRefreshedAt: Date.now(),
+      gamesRefreshAttemptedAt: Date.now(),
       scoresRefreshedAt: sameSlate ? current?.scoresRefreshedAt : undefined,
+      scoresRefreshAttemptedAt: sameSlate ? current?.scoresRefreshAttemptedAt : undefined,
       submissions:      sameSlate ? (current?.submissions ?? []) : [],
       sportKey:         sport.key,
       season:           sameSlate ? (current?.season ?? seasonFromGames(games)) : seasonFromGames(games),
@@ -204,9 +222,11 @@ export async function POST(req: Request) {
       remaining: res.headers.get('x-requests-remaining'),
       sport: sport.label,
       totalGamesFromApi: allGames.length,
+      cached: false,
     });
     });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
+  });
 }

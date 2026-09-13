@@ -93,8 +93,12 @@ export interface PicksState {
   weekNumber?: number;
   games: NFLGame[];
   gamesRefreshedAt: number;
+  /** Last attempted automatic line request, including failed upstream calls. */
+  gamesRefreshAttemptedAt?: number;
   /** Last completed-score API check, used to rate-limit live browser refreshes. */
   scoresRefreshedAt?: number;
+  /** Last attempted automatic score request, including failed upstream calls. */
+  scoresRefreshAttemptedAt?: number;
   submissions: UserPicksSubmission[];
   /** Odds API sport key from last refresh (e.g. basketball_nba). */
   sportKey?: string;
