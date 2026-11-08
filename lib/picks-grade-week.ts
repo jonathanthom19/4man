@@ -15,15 +15,17 @@ export function gradePicksState(state: PicksState): PicksState {
     ...sub,
     picks: sub.picks.map(p => {
       const game = games.find(g => g.id === p.gameId);
-      const allSubmitted = game && LEAGUE_MEMBERS.every(user =>
-        state.submissions.find(s => s.userName === user)?.picks.some(entry => entry.gameId === game.id),
-      );
+      const submittedCount = game
+        ? LEAGUE_MEMBERS.filter(user =>
+            state.submissions.find(s => s.userName === user)?.picks.some(entry => entry.gameId === game.id),
+          ).length
+        : 0;
       // Lock-only games are intentionally chosen independently and may not
       // appear on every member's sheet. Grade the member who selected one as
       // soon as that game is final; regular pool games still wait for all four.
       const canGrade = game?.lockOnly
         ? sub.lockOfWeekGameId === game.id
-        : allSubmitted;
+        : submittedCount >= 3;
       return game
         ? { ...p, result: canGrade ? gradePick(p.selectedTeam, game) : 'pending' }
         : p;

@@ -62,8 +62,14 @@ export function poolDeltasForGame(
   if (w === 1 && l === 3) {
     return Object.fromEntries(active.map(e => [e.user, e.result === 'win' ? 90 : -30]));
   }
+  if (w === 1 && l === 2) {
+    return Object.fromEntries(active.map(e => [e.user, e.result === 'win' ? 60 : -30]));
+  }
   if (w === 3 && l === 1) {
     return Object.fromEntries(active.map(e => [e.user, e.result === 'win' ? 15 : -45]));
+  }
+  if (w === 2 && l === 1) {
+    return Object.fromEntries(active.map(e => [e.user, e.result === 'win' ? 20 : -40]));
   }
   if (w === 2 && l === 2) {
     return Object.fromEntries(active.map(e => [e.user, e.result === 'win' ? 30 : -30]));
@@ -85,8 +91,9 @@ export function aggregatePoolDeltas(
       const pick = sub.picks.find(p => p.gameId === game.id);
       picksByUser[sub.userName] = pick?.selectedTeam;
     }
-    // A four-person pool game is unresolved until all four entries exist.
-    if (LEAGUE_MEMBERS.some(user => !picksByUser[user])) continue;
+    // A game remains valid when one member misses it. The missing member has no
+    // stake; the three submitted entries settle as a zero-sum pool.
+    if (LEAGUE_MEMBERS.filter(user => picksByUser[user]).length < 3) continue;
     const deltas = poolDeltasForGame(game, picksByUser);
     for (const [user, delta] of Object.entries(deltas)) {
       totals[user] = (totals[user] ?? 0) + delta;

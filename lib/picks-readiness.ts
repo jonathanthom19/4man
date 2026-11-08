@@ -26,7 +26,10 @@ export function getWeekIssues(state: PicksState): WeekIssue[] {
       continue;
     }
     for (const game of state.games.filter(game => !game.lockOnly)) {
-      if (!submission.picks.some(p => p.gameId === game.id)) {
+      const submittedCount = state.submissions.filter(memberSubmission =>
+        memberSubmission.picks.some(p => p.gameId === game.id),
+      ).length;
+      if (!submission.picks.some(p => p.gameId === game.id) && submittedCount < 3) {
         issues.push({ userName, gameId: game.id, message: `${userName} is missing ${game.awayTeam} at ${game.homeTeam}` });
       }
     }
