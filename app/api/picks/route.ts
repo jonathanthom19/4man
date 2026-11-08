@@ -18,16 +18,21 @@ export async function GET(req: Request) {
     if (!viewer) return Response.json({ error: 'Valid viewer is required' }, { status: 400 });
     const mine = state.submissions.find(s => s.userName === viewer);
     const visibleGameIds = new Set(mine?.picks.map(p => p.gameId) ?? []);
-    const submissions = state.submissions.map(sub => ({
-      ...sub,
-      picks: sub.userName === viewer
-        ? sub.picks
-        : sub.picks.filter(p => visibleGameIds.has(p.gameId)),
-      lockOfWeekGameId:
-        sub.userName === viewer || (sub.lockOfWeekGameId && visibleGameIds.has(sub.lockOfWeekGameId))
-          ? sub.lockOfWeekGameId
-          : undefined,
-    }));
+    const viewerHasLock = Boolean(mine?.lockOfWeekGameId);
+    const submissions = state.submissions.map(sub => {
+      const canSeeLock = sub.userName === viewer
+        || Boolean(sub.lockOfWeekGameId && (viewerHasLock || visibleGameIds.has(sub.lockOfWeekGameId)));
+      return {
+        ...sub,
+        picks: sub.userName === viewer
+          ? sub.picks
+          : sub.picks.filter(p =>
+              visibleGameIds.has(p.gameId)
+              || (canSeeLock && p.gameId === sub.lockOfWeekGameId),
+            ),
+        lockOfWeekGameId: canSeeLock ? sub.lockOfWeekGameId : undefined,
+      };
+    });
     return Response.json({ state: { ...state, submissions } });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
