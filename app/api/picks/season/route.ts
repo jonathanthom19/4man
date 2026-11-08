@@ -1,4 +1,5 @@
-import { computeLockResults, seasonFromGames } from '@/lib/picks-grading';
+import { computeLockResults, computeOverallPickRecords, seasonFromGames } from '@/lib/picks-grading';
+import { getPicksHistoryBySeason } from '@/lib/picks-history-store';
 import { getPicksState } from '@/lib/picks-store';
 import { getPicksSeason } from '@/lib/picks-season-store';
 
@@ -12,8 +13,25 @@ export async function GET(req: Request) {
       (current?.games.length ? seasonFromGames(current.games) : String(new Date().getFullYear()));
 
     const seasonState = await getPicksSeason(season);
+    const archivedWeeks = await getPicksHistoryBySeason(season);
+    const recordWeeks = [...archivedWeeks];
+    if (current?.season === season && current.games.length) {
+      recordWeeks.push({
+        id: 'active',
+        season,
+        weekLabel: current.weekLabel,
+        archivedAt: 0,
+        games: current.games,
+        submissions: current.submissions,
+        weeklyPoolDeltas: {},
+        balancesAfterWeek: {},
+        lockRecordsAfterWeek: {},
+        gradedAt: current.gradedAt ?? 0,
+      });
+    }
+    const overallRecords = computeOverallPickRecords(recordWeeks);
     if (!current || current.season !== season || !current.games.length) {
-      return Response.json({ season: seasonState });
+      return Response.json({ season: { ...seasonState, overallRecords } });
     }
 
     // Include finalized Lock results from the active week for display without
@@ -28,7 +46,7 @@ export async function GET(req: Request) {
         pushes: record.pushes + (result === 'push' ? 1 : 0),
       };
     }
-    return Response.json({ season: { ...seasonState, lockRecords } });
+    return Response.json({ season: { ...seasonState, lockRecords, overallRecords } });
   } catch (err: unknown) {
     return Response.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }

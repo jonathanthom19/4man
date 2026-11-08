@@ -118,6 +118,35 @@ export function computeLockResults(
   return results;
 }
 
+/** Overall ATS W-L-T across regular picks. This never affects pool payouts. */
+export function computeOverallPickRecords(
+  weeks: Array<Pick<{ games: NFLGame[]; submissions: UserPicksSubmission[] }, 'games' | 'submissions'>>,
+): Record<string, LockRecord> {
+  const records: Record<string, LockRecord> = Object.fromEntries(
+    LEAGUE_MEMBERS.map(member => [member, { wins: 0, losses: 0, pushes: 0 }]),
+  );
+
+  for (const week of weeks) {
+    const regularGames = new Map(
+      week.games.filter(game => !game.lockOnly).map(game => [game.id, game]),
+    );
+    for (const submission of week.submissions) {
+      const record = records[submission.userName] ?? { wins: 0, losses: 0, pushes: 0 };
+      for (const pick of submission.picks) {
+        const game = regularGames.get(pick.gameId);
+        if (!game) continue;
+        const result = gradePick(pick.selectedTeam, game);
+        if (result === 'win') record.wins++;
+        else if (result === 'loss') record.losses++;
+        else if (result === 'push') record.pushes++;
+      }
+      records[submission.userName] = record;
+    }
+  }
+
+  return records;
+}
+
 export function seasonFromGames(games: NFLGame[]): string {
   if (!games.length) return String(new Date().getFullYear());
   const t = new Date(games[0].commenceTime);

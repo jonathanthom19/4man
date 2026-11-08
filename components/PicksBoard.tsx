@@ -50,6 +50,10 @@ function automaticRefreshErrorMessage(error: unknown): string {
   return `Automatic odds or score refresh failed: ${detail}`;
 }
 
+function formatOverallRecord(record: { wins: number; losses: number; pushes: number }): string {
+  return `${record.wins}-${record.losses}-${record.pushes}`;
+}
+
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
 async function apiFetchPicks(viewer: string): Promise<PicksState | null> {
@@ -519,6 +523,7 @@ export default function PicksBoard({
                         <th className="px-4 py-2">Player</th>
                         <th className="px-4 py-2">Week</th>
                         <th className="px-4 py-2">Season Total</th>
+                        <th className="px-4 py-2">Overall W-L-T</th>
                         <th className="px-4 py-2">Lock W-L</th>
                       </tr>
                     </thead>
@@ -531,6 +536,9 @@ export default function PicksBoard({
                             </td>
                             <td className={`px-4 py-2 font-mono ${((seasonState.balances[name] ?? 0) + (picksState?.lastWeeklyPoolDeltas?.[name] ?? 0)) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                               {((seasonState.balances[name] ?? 0) + (picksState?.lastWeeklyPoolDeltas?.[name] ?? 0)) >= 0 ? '+' : ''}{(seasonState.balances[name] ?? 0) + (picksState?.lastWeeklyPoolDeltas?.[name] ?? 0)}$
+                            </td>
+                            <td className="px-4 py-2 text-slate-600 dark:text-slate-300 text-xs font-mono">
+                              {formatOverallRecord(seasonState.overallRecords?.[name] ?? { wins: 0, losses: 0, pushes: 0 })}
                             </td>
                             <td className="px-4 py-2 text-slate-500 text-xs">
                               {formatLockRecord(seasonState.lockRecords[name] ?? { wins: 0, losses: 0, pushes: 0 })}

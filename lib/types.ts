@@ -138,6 +138,8 @@ export interface PicksSeasonState {
   season: string;
   balances: Record<string, number>;
   lockRecords: Record<string, LockRecord>;
+  /** Overall ATS results for regular weekly picks; informational only. */
+  overallRecords?: Record<string, LockRecord>;
 }
 
 export interface ArchivedPicksWeek {
