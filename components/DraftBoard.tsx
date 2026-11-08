@@ -993,8 +993,8 @@ function LobbyScreen(props: {
 // Draft grid (left panel)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function DraftGrid({ names, rounds, picks, currentPick, snake, pickOwners = {} }: {
-  names: string[]; rounds: number; picks: DraftedPlayer[]; currentPick: number; snake: boolean; pickOwners?: Record<string, string>;
+function DraftGrid({ names, rounds, picks, currentPick, snake, pickOwners = {}, completed = false }: {
+  names: string[]; rounds: number; picks: DraftedPlayer[]; currentPick: number; snake: boolean; pickOwners?: Record<string, string>; completed?: boolean;
 }) {
   const n = names.length;
   const pickMap = useMemo(() => {
@@ -1031,7 +1031,7 @@ function DraftGrid({ names, rounds, picks, currentPick, snake, pickOwners = {} }
                 const traded  = owner !== names[m];
                 const drafted = pickMap[pn];
                 const isCur   = pn === currentPick;
-                const isPast  = pn < currentPick;
+                const isPast  = !completed && pn < currentPick;
                 const c       = colorFor(owner, m);
                 return (
                   <td key={m}
@@ -1296,48 +1296,64 @@ function AvailableView({ players, draftedIds, onRequestDraft, isMyTurn, isAdmin,
 // Draft complete screen
 // ─────────────────────────────────────────────────────────────────────────────
 
-function CompletedScreen({ names, picks, rounds, onReset }: {
-  names: string[]; picks: DraftedPlayer[]; rounds: number; onReset: () => void;
+function CompletedScreen({ names, picks, rounds, snake, pickOwners, draftName, onBack }: {
+  names: string[];
+  picks: DraftedPlayer[];
+  rounds: number;
+  snake: boolean;
+  pickOwners?: Record<string, string>;
+  draftName?: string;
+  onBack: () => void;
 }) {
   const n = names.length;
-  const bySlot = useMemo(() => {
-    const arr: DraftedPlayer[][] = Array.from({ length: n }, () => []);
-    picks.forEach(p => { const s = names.findIndex(name => name === p.manager); if (s >= 0 && s < n) arr[s].push(p); });
-    return arr;
-  }, [picks, n, names]);
+  const totalPicks = n * rounds;
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col">
-      <div className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-white">Draft Complete</h1>
-          <p className="text-slate-500 text-sm">{rounds} rounds · {n * rounds} picks</p>
-        </div>
-        <button onClick={onReset} className="bg-white text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg hover:bg-slate-100 transition-colors">
-          Current Year
+    <div className="h-screen bg-slate-100 dark:bg-slate-950 flex flex-col overflow-hidden">
+      <nav className="shrink-0 bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="shrink-0 rounded-lg px-3 py-2 text-sm font-semibold text-slate-200 hover:text-white hover:bg-slate-800 transition-colors"
+          aria-label="Return to current year drafts"
+        >
+          ← Current Year
         </button>
-      </div>
-      <div className="flex-1 flex divide-x divide-slate-800 overflow-hidden">
-        {names.map((name, i) => (
-          <div key={i} className="flex-1 flex flex-col overflow-hidden">
-            <div className={`${colorFor(name).header} text-white font-semibold text-xs text-center py-2.5 tracking-wide`}>{name}</div>
-            <div className="flex-1 overflow-y-auto bg-slate-900">
-              {bySlot[i].map(p => (
-                <div key={p.pickNumber} className="flex items-center gap-2.5 px-3 py-2 border-b border-slate-800">
-                  <span className="text-[10px] text-slate-600 w-4 text-right shrink-0 font-medium">{p.round}</span>
-                  <PlayerPhoto playerId={p.player_id} team={p.team} size={28} />
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-200 truncate">{p.name}</p>
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <PosBadge pos={p.pos} />
-                      <span className="text-[10px] text-slate-500">{p.team}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+        <div className="w-px h-6 bg-slate-700" />
+        <div className="min-w-0">
+          <h1 className="text-sm font-bold text-white truncate">{draftName || 'Draft Complete'}</h1>
+          <p className="text-slate-500 text-[11px]">Draft complete · {rounds} rounds · {totalPicks} picks</p>
+        </div>
+      </nav>
+
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 overflow-y-auto lg:overflow-hidden">
+        <section className="min-h-[50vh] lg:min-h-0 flex flex-col overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-700">
+          <div className="shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-4 py-2.5">
+            <h2 className="text-xs font-bold uppercase tracking-wide text-slate-700 dark:text-slate-200">Draft Board</h2>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500">Every selection in pick order</p>
           </div>
-        ))}
+          <div className="flex-1 min-h-0 overflow-auto bg-white dark:bg-slate-900">
+            <DraftGrid
+              names={names}
+              rounds={rounds}
+              picks={picks}
+              currentPick={totalPicks + 1}
+              snake={snake}
+              pickOwners={pickOwners}
+              completed
+            />
+          </div>
+        </section>
+
+        <section className="min-h-[50vh] lg:min-h-0 flex flex-col overflow-hidden">
+          <div className="shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-4 py-2.5">
+            <h2 className="text-xs font-bold uppercase tracking-wide text-slate-700 dark:text-slate-200">Final Teams</h2>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500">Completed rosters by manager</p>
+          </div>
+          <div className="flex-1 min-h-0 bg-white dark:bg-slate-900">
+            <TeamsView names={names} picks={picks} />
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -1876,7 +1892,15 @@ export default function DraftBoard() {
       )}
 
       {screen === 'draft' && isDone && draftState && (
-        <CompletedScreen names={draftState.managers} picks={draftState.picks} rounds={draftState.rounds} onReset={() => setScreen('setup')} />
+        <CompletedScreen
+          names={draftState.managers}
+          picks={draftState.picks}
+          rounds={draftState.rounds}
+          snake={snake}
+          pickOwners={draftState.pickOwners}
+          draftName={draftState.draftName}
+          onBack={() => setScreen('setup')}
+        />
       )}
 
       {screen === 'draft' && !isDone && draftState && (() => {
