@@ -18,12 +18,14 @@ function etDateParts(date: Date): { year: number; month: number; day: number } {
   return { year: value('year'), month: value('month'), day: value('day') };
 }
 
-function seasonOpenerDateMs(season: number): number {
+function seasonWeekOneStartMs(season: number): number {
   const septemberFirst = new Date(Date.UTC(season, 8, 1));
   const daysToMonday = (8 - septemberFirst.getUTCDay()) % 7;
   const laborDay = 1 + daysToMonday;
-  // The regular season opens on the Thursday following Labor Day.
-  return Date.UTC(season, 8, laborDay + 3);
+  // NFL slates can begin on Wednesday (for example, Week 1 and Thanksgiving
+  // week in 2026). Treat Wednesday through Tuesday as one picks week so an
+  // early Wednesday kickoff is never grouped into the prior week's slate.
+  return Date.UTC(season, 8, laborDay + 2);
 }
 
 /** Calendar NFL week, independent of which past games remain in the odds feed. */
@@ -32,7 +34,7 @@ export function nflWeekNumberForDate(value: string | Date): number {
   const { year, month, day } = etDateParts(date);
   const season = month <= 2 ? year - 1 : year;
   const calendarDate = Date.UTC(year, month - 1, day);
-  return Math.max(1, Math.floor((calendarDate - seasonOpenerDateMs(season)) / (7 * 86_400_000)) + 1);
+  return Math.max(1, Math.floor((calendarDate - seasonWeekOneStartMs(season)) / (7 * 86_400_000)) + 1);
 }
 
 /** Group games by their real calendar NFL week, retaining gaps in the feed. */
